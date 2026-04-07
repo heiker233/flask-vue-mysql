@@ -2,4 +2,7 @@ flask
 flask-sqlalchemy
 flask-cors
 pymysql
-python-dotenv
+pandas
+openpyxl
+werkzeug
+pyjwt

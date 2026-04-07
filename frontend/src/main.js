@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import axios from 'axios'
@@ -15,7 +16,11 @@ const app = createApp(App)
 // 请求拦截器
 axios.interceptors.request.use(
   (config) => {
-    // 这里可以添加认证令牌等
+    // 从 localStorage 获取token并添加到请求头
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
     return config
   },
   (error) => {
@@ -40,8 +45,10 @@ axios.interceptors.response.use(
 // 全局配置 Axios
 app.config.globalProperties.$http = axios
 
-// 注册 Element Plus
-app.use(ElementPlus)
+// 注册 Element Plus，配置中文语言
+app.use(ElementPlus, {
+  locale: zhCn,
+})
 
 // 注册 Element Plus 图标
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
