@@ -87,6 +87,15 @@ class Todo(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+# 客户标签关联表
+class CustomerTag(db.Model):
+    __tablename__ = 'customer_tags'
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    tag_name = db.Column(db.String(50), nullable=False)  # 标签名称
+    tag_type = db.Column(db.String(20), nullable=False)  # 标签类型：value(价值), stage(阶段), custom(自定义)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 # 客户表
 class Customer(db.Model):
     __tablename__ = 'customers'
@@ -97,12 +106,17 @@ class Customer(db.Model):
     company = db.Column(db.String(100))
     industry = db.Column(db.String(50))
     status = db.Column(db.String(20), default='potential')
+    # 客户价值评分 (1-5星)
+    value_score = db.Column(db.Integer, default=3)
+    # 合作阶段
+    cooperation_stage = db.Column(db.String(20), default='initial')
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     follow_ups = db.relationship('FollowUp', backref='customer', lazy=True)
     deals = db.relationship('Deal', backref='customer', lazy=True)
+    tags = db.relationship('CustomerTag', backref='customer', lazy=True, cascade='all, delete-orphan')
 
 # 跟进记录表
 class FollowUp(db.Model):
@@ -225,30 +239,83 @@ def register():
 @app.route('/api/customers', methods=['GET'])
 def get_customers():
     customers = Customer.query.order_by(Customer.created_at.desc()).all()
-    return jsonify([{
-        'id': c.id,
-        'name': c.name,
-        'phone': c.phone,
-        'email': c.email,
-        'company': c.company,
-        'industry': c.industry,
-        'status': c.status,
-        'created_at': c.created_at.isoformat()
-    } for c in customers])
+    result = []
+    for c in customers:
+        # 获取客户的标签
+        tags = [{'id': t.id, 'name': t.tag_name, 'type': t.tag_type} for t in c.tags]
+        
+        # 获取最近一次跟进记录
+        latest_follow_up = FollowUp.query.filter_by(customer_id=c.id).order_by(FollowUp.created_at.desc()).first()
+        next_follow_date = None
+        if latest_follow_up and latest_follow_up.next_follow_date:
+            next_follow_date = latest_follow_up.next_follow_date.isoformat()
+        
+        result.append({
+            'id': c.id,
+            'name': c.name,
+            'phone': c.phone,
+            'email': c.email,
+            'company': c.company,
+            'industry': c.industry,
+            'status': c.status,
+            'value_score': c.value_score,
+            'cooperation_stage': c.cooperation_stage,
+            'tags': tags,
+            'next_follow_date': next_follow_date,
+            'created_at': c.created_at.isoformat()
+        })
+    return jsonify(result)
 
 @app.route('/api/customers', methods=['POST'])
 def add_customer():
     data = request.json
+    
+    # 客户查重：检查电话或邮箱是否已存在
+    phone = data.get('phone', '').strip() if data.get('phone') else None
+    email = data.get('email', '').strip() if data.get('email') else None
+    
+    duplicate_check = None
+    if phone:
+        duplicate_check = Customer.query.filter(Customer.phone == phone).first()
+    if not duplicate_check and email:
+        duplicate_check = Customer.query.filter(Customer.email == email).first()
+    
+    if duplicate_check:
+        return jsonify({
+            'success': False, 
+            'message': f'客户已存在：{duplicate_check.name}（电话: {duplicate_check.phone or "无"}, 邮箱: {duplicate_check.email or "无"}）',
+            'duplicate': {
+                'id': duplicate_check.id,
+                'name': duplicate_check.name,
+                'phone': duplicate_check.phone,
+                'email': duplicate_check.email
+            }
+        }), 409
+    
     new_customer = Customer(
         name=data['name'],
-        phone=data.get('phone'),
-        email=data.get('email'),
+        phone=phone,
+        email=email,
         company=data.get('company'),
         industry=data.get('industry'),
         status=data.get('status', 'potential'),
+        value_score=data.get('value_score', 3),
+        cooperation_stage=data.get('cooperation_stage', 'initial'),
         created_by=1
     )
     db.session.add(new_customer)
+    db.session.flush()  # 获取新客户的ID
+    
+    # 添加客户标签
+    if 'tags' in data and data['tags']:
+        for tag in data['tags']:
+            new_tag = CustomerTag(
+                customer_id=new_customer.id,
+                tag_name=tag['name'],
+                tag_type=tag.get('type', 'custom')
+            )
+            db.session.add(new_tag)
+    
     db.session.commit()
     return jsonify({'success': True, 'message': '客户添加成功', 'customer': {'id': new_customer.id}})
 
@@ -259,12 +326,54 @@ def update_customer(id):
         return jsonify({'success': False, 'message': '客户不存在'}), 404
     
     data = request.json
+    
+    # 客户查重：检查电话或邮箱是否与其他客户冲突
+    phone = data.get('phone', customer.phone)
+    email = data.get('email', customer.email)
+    
+    if phone:
+        duplicate = Customer.query.filter(
+            Customer.phone == phone,
+            Customer.id != id
+        ).first()
+        if duplicate:
+            return jsonify({
+                'success': False,
+                'message': f'电话号码已被其他客户使用：{duplicate.name}'
+            }), 409
+    
+    if email:
+        duplicate = Customer.query.filter(
+            Customer.email == email,
+            Customer.id != id
+        ).first()
+        if duplicate:
+            return jsonify({
+                'success': False,
+                'message': f'邮箱已被其他客户使用：{duplicate.name}'
+            }), 409
+    
     customer.name = data.get('name', customer.name)
-    customer.phone = data.get('phone', customer.phone)
-    customer.email = data.get('email', customer.email)
+    customer.phone = phone
+    customer.email = email
     customer.company = data.get('company', customer.company)
     customer.industry = data.get('industry', customer.industry)
     customer.status = data.get('status', customer.status)
+    customer.value_score = data.get('value_score', customer.value_score)
+    customer.cooperation_stage = data.get('cooperation_stage', customer.cooperation_stage)
+    
+    # 更新客户标签
+    if 'tags' in data:
+        # 删除旧标签
+        CustomerTag.query.filter_by(customer_id=id).delete()
+        # 添加新标签
+        for tag in data['tags']:
+            new_tag = CustomerTag(
+                customer_id=id,
+                tag_name=tag['name'],
+                tag_type=tag.get('type', 'custom')
+            )
+            db.session.add(new_tag)
     
     db.session.commit()
     return jsonify({'success': True, 'message': '客户信息更新成功'})
@@ -1692,6 +1801,111 @@ def download_template(data_type):
         
     except Exception as e:
         return jsonify({'error': f'下载模板失败: {str(e)}'}), 500
+
+# 客户跟进提醒 API
+@app.route('/api/customers/follow-up-reminders', methods=['GET'])
+def get_follow_up_reminders():
+    """获取需要跟进的客户列表（按下次跟进时间筛选）"""
+    days = request.args.get('days', 7, type=int)  # 默认查询未来7天内需要跟进的
+    
+    today = datetime.utcnow().date()
+    end_date = today + timedelta(days=days)
+    
+    # 查询所有客户及其最新跟进记录
+    customers = Customer.query.all()
+    reminders = []
+    
+    for customer in customers:
+        # 获取该客户最新的跟进记录
+        latest_follow_up = FollowUp.query.filter_by(customer_id=customer.id).order_by(FollowUp.created_at.desc()).first()
+        
+        if latest_follow_up and latest_follow_up.next_follow_date:
+            next_date = latest_follow_up.next_follow_date
+            # 如果下次跟进时间在范围内（包括已逾期的）
+            if next_date <= end_date:
+                is_overdue = next_date < today
+                reminders.append({
+                    'customer_id': customer.id,
+                    'customer_name': customer.name,
+                    'customer_phone': customer.phone,
+                    'customer_company': customer.company,
+                    'next_follow_date': next_date.isoformat(),
+                    'is_overdue': is_overdue,
+                    'days_remaining': (next_date - today).days,
+                    'last_follow_content': latest_follow_up.content,
+                    'last_follow_type': latest_follow_up.follow_type
+                })
+        else:
+            # 没有跟进记录或没有设置下次跟进时间的客户
+            reminders.append({
+                'customer_id': customer.id,
+                'customer_name': customer.name,
+                'customer_phone': customer.phone,
+                'customer_company': customer.company,
+                'next_follow_date': None,
+                'is_overdue': True,
+                'days_remaining': -999,
+                'last_follow_content': None,
+                'last_follow_type': None,
+                'no_follow_up': True
+            })
+    
+    # 按逾期情况和剩余天数排序
+    reminders.sort(key=lambda x: (not x.get('is_overdue', False), x.get('days_remaining', 0)))
+    
+    return jsonify({
+        'success': True,
+        'reminders': reminders,
+        'total': len(reminders),
+        'overdue_count': sum(1 for r in reminders if r.get('is_overdue', False)),
+        'today_count': sum(1 for r in reminders if r.get('days_remaining', -1) == 0)
+    })
+
+@app.route('/api/customers/check-duplicate', methods=['POST'])
+def check_customer_duplicate():
+    """检查客户是否重复（按电话或邮箱）"""
+    data = request.json
+    phone = data.get('phone', '').strip() if data.get('phone') else None
+    email = data.get('email', '').strip() if data.get('email') else None
+    exclude_id = data.get('exclude_id')  # 编辑时排除当前客户ID
+    
+    if not phone and not email:
+        return jsonify({'success': True, 'is_duplicate': False})
+    
+    query = Customer.query
+    
+    if exclude_id:
+        query = query.filter(Customer.id != exclude_id)
+    
+    duplicate = None
+    if phone:
+        duplicate = query.filter(Customer.phone == phone).first()
+    if not duplicate and email:
+        duplicate = query.filter(Customer.email == email).first()
+    
+    if duplicate:
+        return jsonify({
+            'success': True,
+            'is_duplicate': True,
+            'customer': {
+                'id': duplicate.id,
+                'name': duplicate.name,
+                'phone': duplicate.phone,
+                'email': duplicate.email,
+                'company': duplicate.company
+            }
+        })
+    
+    return jsonify({'success': True, 'is_duplicate': False})
+
+@app.route('/api/customers/tags', methods=['GET'])
+def get_all_tags():
+    """获取系统中所有使用过的标签"""
+    tags = db.session.query(CustomerTag.tag_name, CustomerTag.tag_type).distinct().all()
+    return jsonify([{
+        'name': tag[0],
+        'type': tag[1]
+    } for tag in tags])
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

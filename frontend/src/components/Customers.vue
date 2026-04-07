@@ -6,9 +6,15 @@
         <h2>客户管理</h2>
         <el-tag type="info" class="count-tag">共 {{ total }} 位客户</el-tag>
       </div>
-      <el-button type="primary" @click="showAddDialog = true" :icon="Plus">
-        添加客户
-      </el-button>
+      <div class="header-right">
+        <el-button type="warning" @click="showReminderDialog = true" :icon="Bell">
+          跟进提醒
+          <el-badge v-if="overdueCount > 0" :value="overdueCount" class="reminder-badge" />
+        </el-button>
+        <el-button type="primary" @click="showAddDialog = true" :icon="Plus">
+          添加客户
+        </el-button>
+      </div>
     </div>
 
     <!-- 搜索和筛选区域 -->
@@ -99,6 +105,19 @@
                   :value="industry"
                 />
               </el-select>
+              <el-select
+                v-model="filterValueScore"
+                placeholder="客户价值"
+                clearable
+                @change="handleSearch"
+                class="filter-select"
+              >
+                <el-option label="⭐⭐⭐⭐⭐ 高价值" :value="5" />
+                <el-option label="⭐⭐⭐⭐ 较高价值" :value="4" />
+                <el-option label="⭐⭐⭐ 中等价值" :value="3" />
+                <el-option label="⭐⭐ 较低价值" :value="2" />
+                <el-option label="⭐ 低价值" :value="1" />
+              </el-select>
               <el-button @click="resetFilters" :icon="RefreshRight">重置</el-button>
             </div>
           </div>
@@ -129,7 +148,7 @@
         </el-table-column>
         <el-table-column prop="phone" label="电话" min-width="120" />
         <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="company" label="公司" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="company" label="公司" min-width="120" show-overflow-tooltip />
         <el-table-column prop="industry" label="行业" min-width="100">
           <template #default="scope">
             <el-tag v-if="scope.row.industry" size="small" effect="plain">
@@ -138,19 +157,56 @@
             <span v-else class="text-gray">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100" align="center" sortable>
+        <el-table-column prop="value_score" label="价值" width="100" align="center">
           <template #default="scope">
-            <el-tag :type="getCustomerStatusType(scope.row.status)" effect="light">
+            <el-rate v-model="scope.row.value_score" disabled show-score text-color="#ff9900" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="cooperation_stage" label="合作阶段" width="100" align="center">
+          <template #default="scope">
+            <el-tag :type="getStageType(scope.row.cooperation_stage)" size="small">
+              {{ getStageText(scope.row.cooperation_stage) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="tags" label="标签" min-width="120">
+          <template #default="scope">
+            <div class="tag-list">
+              <el-tag
+                v-for="tag in scope.row.tags.slice(0, 3)"
+                :key="tag.id"
+                :type="getTagType(tag.type)"
+                size="small"
+                class="customer-tag"
+              >
+                {{ tag.name }}
+              </el-tag>
+              <el-tag v-if="scope.row.tags.length > 3" size="small" type="info">+{{ scope.row.tags.length - 3 }}</el-tag>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="next_follow_date" label="下次跟进" width="120" align="center">
+          <template #default="scope">
+            <el-tag v-if="isOverdue(scope.row.next_follow_date)" type="danger" size="small">
+              已逾期
+            </el-tag>
+            <el-tag v-else-if="isToday(scope.row.next_follow_date)" type="warning" size="small">
+              今天
+            </el-tag>
+            <span v-else-if="scope.row.next_follow_date" class="text-gray">
+              {{ formatDateShort(scope.row.next_follow_date) }}
+            </span>
+            <span v-else class="text-gray">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="90" align="center">
+          <template #default="scope">
+            <el-tag :type="getCustomerStatusType(scope.row.status)" effect="light" size="small">
               {{ getCustomerStatusText(scope.row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" sortable>
-          <template #default="scope">
-            {{ formatDate(scope.row.created_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
             <el-button type="primary" link :icon="View" @click="viewCustomer(scope.row)">
               查看
@@ -183,7 +239,7 @@
     <el-dialog
       v-model="showAddDialog"
       title="添加客户"
-      width="600px"
+      width="700px"
       destroy-on-close
     >
       <el-form
@@ -201,12 +257,22 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="电话" prop="phone">
-              <el-input v-model="newCustomer.phone" placeholder="请输入客户电话" />
+              <el-input 
+                v-model="newCustomer.phone" 
+                placeholder="请输入客户电话"
+                @blur="checkDuplicate('phone', newCustomer.phone)"
+              />
+              <el-alert v-if="duplicateWarning.phone" :title="duplicateWarning.phone" type="warning" :closable="false" show-icon />
             </el-form-item>
           </el-col>
         </el-row>
         <el-form-item label="邮箱" prop="email">
-          <el-input v-model="newCustomer.email" placeholder="请输入客户邮箱" />
+          <el-input 
+            v-model="newCustomer.email" 
+            placeholder="请输入客户邮箱"
+            @blur="checkDuplicate('email', newCustomer.email)"
+          />
+          <el-alert v-if="duplicateWarning.email" :title="duplicateWarning.email" type="warning" :closable="false" show-icon />
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
@@ -227,22 +293,52 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="客户价值" prop="value_score">
+              <el-rate v-model="newCustomer.value_score" show-score />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="合作阶段" prop="cooperation_stage">
+              <el-select v-model="newCustomer.cooperation_stage" placeholder="请选择合作阶段" style="width: 100%">
+                <el-option label="初步接触" value="initial" />
+                <el-option label="需求沟通" value="communication" />
+                <el-option label="方案制定" value="proposal" />
+                <el-option label="商务谈判" value="negotiation" />
+                <el-option label="已签约" value="signed" />
+                <el-option label="合作中" value="cooperating" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="客户标签" prop="tags">
+          <el-select
+            v-model="newCustomer.tags"
+            multiple
+            filterable
+            allow-create
+            placeholder="请选择或输入标签"
+            style="width: 100%"
+          >
+            <el-option-group label="价值标签">
+              <el-option label="高价值客户" value="高价值客户" />
+              <el-option label="VIP客户" value="VIP客户" />
+              <el-option label="长期合作" value="长期合作" />
+            </el-option-group>
+            <el-option-group label="阶段标签">
+              <el-option label="新客户" value="新客户" />
+              <el-option label="待跟进" value="待跟进" />
+              <el-option label="重点客户" value="重点客户" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="newCustomer.status">
             <el-radio-button label="potential">潜在客户</el-radio-button>
             <el-radio-button label="active">活跃客户</el-radio-button>
             <el-radio-button label="lost">已流失</el-radio-button>
           </el-radio-group>
-        </el-form-item>
-        <el-form-item label="备注" prop="notes">
-          <el-input
-            v-model="newCustomer.notes"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入客户备注信息"
-            maxlength="500"
-            show-word-limit
-          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -255,7 +351,7 @@
     <el-dialog
       v-model="showEditDialog"
       title="编辑客户"
-      width="600px"
+      width="700px"
       destroy-on-close
     >
       <el-form
@@ -273,12 +369,22 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="电话" prop="phone">
-              <el-input v-model="editCustomerForm.phone" placeholder="请输入客户电话" />
+              <el-input 
+                v-model="editCustomerForm.phone" 
+                placeholder="请输入客户电话"
+                @blur="checkDuplicate('phone', editCustomerForm.phone, editCustomerForm.id)"
+              />
+              <el-alert v-if="duplicateWarning.phone" :title="duplicateWarning.phone" type="warning" :closable="false" show-icon />
             </el-form-item>
           </el-col>
         </el-row>
         <el-form-item label="邮箱" prop="email">
-          <el-input v-model="editCustomerForm.email" placeholder="请输入客户邮箱" />
+          <el-input 
+            v-model="editCustomerForm.email" 
+            placeholder="请输入客户邮箱"
+            @blur="checkDuplicate('email', editCustomerForm.email, editCustomerForm.id)"
+          />
+          <el-alert v-if="duplicateWarning.email" :title="duplicateWarning.email" type="warning" :closable="false" show-icon />
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
@@ -299,22 +405,52 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="客户价值" prop="value_score">
+              <el-rate v-model="editCustomerForm.value_score" show-score />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="合作阶段" prop="cooperation_stage">
+              <el-select v-model="editCustomerForm.cooperation_stage" placeholder="请选择合作阶段" style="width: 100%">
+                <el-option label="初步接触" value="initial" />
+                <el-option label="需求沟通" value="communication" />
+                <el-option label="方案制定" value="proposal" />
+                <el-option label="商务谈判" value="negotiation" />
+                <el-option label="已签约" value="signed" />
+                <el-option label="合作中" value="cooperating" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="客户标签" prop="tags">
+          <el-select
+            v-model="editCustomerForm.tags"
+            multiple
+            filterable
+            allow-create
+            placeholder="请选择或输入标签"
+            style="width: 100%"
+          >
+            <el-option-group label="价值标签">
+              <el-option label="高价值客户" value="高价值客户" />
+              <el-option label="VIP客户" value="VIP客户" />
+              <el-option label="长期合作" value="长期合作" />
+            </el-option-group>
+            <el-option-group label="阶段标签">
+              <el-option label="新客户" value="新客户" />
+              <el-option label="待跟进" value="待跟进" />
+              <el-option label="重点客户" value="重点客户" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="editCustomerForm.status">
             <el-radio-button label="potential">潜在客户</el-radio-button>
             <el-radio-button label="active">活跃客户</el-radio-button>
             <el-radio-button label="lost">已流失</el-radio-button>
           </el-radio-group>
-        </el-form-item>
-        <el-form-item label="备注" prop="notes">
-          <el-input
-            v-model="editCustomerForm.notes"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入客户备注信息"
-            maxlength="500"
-            show-word-limit
-          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -336,9 +472,14 @@
           </el-avatar>
           <div class="detail-title">
             <h3>{{ currentCustomer.name }}</h3>
-            <el-tag :type="getCustomerStatusType(currentCustomer.status)" effect="light">
-              {{ getCustomerStatusText(currentCustomer.status) }}
-            </el-tag>
+            <div class="detail-tags">
+              <el-tag :type="getCustomerStatusType(currentCustomer.status)" effect="light">
+                {{ getCustomerStatusText(currentCustomer.status) }}
+              </el-tag>
+              <el-tag :type="getStageType(currentCustomer.cooperation_stage)" effect="plain">
+                {{ getStageText(currentCustomer.cooperation_stage) }}
+              </el-tag>
+            </div>
           </div>
         </div>
         <el-descriptions :column="2" border>
@@ -346,9 +487,28 @@
           <el-descriptions-item label="邮箱">{{ currentCustomer.email || '-' }}</el-descriptions-item>
           <el-descriptions-item label="公司">{{ currentCustomer.company || '-' }}</el-descriptions-item>
           <el-descriptions-item label="行业">{{ currentCustomer.industry || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户价值">
+            <el-rate v-model="currentCustomer.value_score" disabled show-score />
+          </el-descriptions-item>
+          <el-descriptions-item label="下次跟进">
+            <el-tag v-if="isOverdue(currentCustomer.next_follow_date)" type="danger">已逾期</el-tag>
+            <span v-else>{{ formatDate(currentCustomer.next_follow_date) || '未设置' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="标签" :span="2">
+            <div class="tag-list">
+              <el-tag
+                v-for="tag in currentCustomer.tags"
+                :key="tag.id"
+                :type="getTagType(tag.type)"
+                class="customer-tag"
+              >
+                {{ tag.name }}
+              </el-tag>
+              <span v-if="!currentCustomer.tags || currentCustomer.tags.length === 0" class="text-gray">暂无标签</span>
+            </div>
+          </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(currentCustomer.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDate(currentCustomer.updated_at) }}</el-descriptions-item>
-          <el-descriptions-item label="备注" :span="2">{{ currentCustomer.notes || '-' }}</el-descriptions-item>
         </el-descriptions>
         <div class="detail-actions">
           <el-button type="primary" @click="showViewDialog = false; editCustomer(currentCustomer)">
@@ -358,6 +518,79 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- 跟进提醒对话框 -->
+    <el-dialog
+      v-model="showReminderDialog"
+      title="客户跟进提醒"
+      width="800px"
+    >
+      <el-tabs v-model="reminderTab">
+        <el-tab-pane label="全部提醒" name="all">
+          <el-alert
+            v-if="reminderStats.overdue_count > 0"
+            :title="`有 ${reminderStats.overdue_count} 个客户跟进已逾期，请尽快处理！`"
+            type="error"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 15px;"
+          />
+          <el-table :data="followUpReminders" border stripe>
+            <el-table-column prop="customer_name" label="客户姓名" min-width="100" />
+            <el-table-column prop="customer_company" label="公司" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="next_follow_date" label="下次跟进时间" width="120">
+              <template #default="scope">
+                <el-tag v-if="scope.row.is_overdue" type="danger" size="small">已逾期</el-tag>
+                <el-tag v-else-if="scope.row.days_remaining === 0" type="warning" size="small">今天</el-tag>
+                <span v-else>{{ formatDate(scope.row.next_follow_date) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="last_follow_content" label="上次跟进内容" min-width="200" show-overflow-tooltip />
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="scope">
+                <el-button type="primary" link @click="goToFollowUp(scope.row.customer_id)">
+                  去跟进
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="已逾期" name="overdue">
+          <el-table :data="overdueReminders" border stripe>
+            <el-table-column prop="customer_name" label="客户姓名" min-width="100" />
+            <el-table-column prop="customer_company" label="公司" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="next_follow_date" label="应跟进时间" width="120">
+              <template #default="scope">
+                <span style="color: #f56c6c;">{{ formatDate(scope.row.next_follow_date) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="last_follow_content" label="上次跟进内容" min-width="200" show-overflow-tooltip />
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="scope">
+                <el-button type="primary" link @click="goToFollowUp(scope.row.customer_id)">
+                  去跟进
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="今天" name="today">
+          <el-table :data="todayReminders" border stripe>
+            <el-table-column prop="customer_name" label="客户姓名" min-width="100" />
+            <el-table-column prop="customer_company" label="公司" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="customer_phone" label="电话" min-width="120" />
+            <el-table-column prop="last_follow_content" label="上次跟进内容" min-width="200" show-overflow-tooltip />
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="scope">
+                <el-button type="primary" link @click="goToFollowUp(scope.row.customer_id)">
+                  去跟进
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </el-dialog>
   </div>
 </template>
 
@@ -365,20 +598,11 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { User, Plus, Search, RefreshRight, View, Edit, Delete, Calendar, Setting, Grid } from '@element-plus/icons-vue'
+import { User, Plus, Search, RefreshRight, View, Edit, Delete, Calendar, Setting, Grid, Bell } from '@element-plus/icons-vue'
 
-const props = defineProps({
-  currentUser: {
-    type: Object,
-    default: () => ({ role: 'user' })
-  }
-})
+const emit = defineEmits(['navigate'])
 
-// 判断是否为管理员
-const isAdmin = computed(() => {
-  return props.currentUser?.role === 'admin'
-})
-
+// 数据
 const customers = ref([])
 const loading = ref(false)
 const saving = ref(false)
@@ -386,6 +610,7 @@ const updating = ref(false)
 const showAddDialog = ref(false)
 const showEditDialog = ref(false)
 const showViewDialog = ref(false)
+const showReminderDialog = ref(false)
 const addFormRef = ref(null)
 const editFormRef = ref(null)
 
@@ -393,6 +618,7 @@ const editFormRef = ref(null)
 const searchQuery = ref('')
 const filterStatus = ref('')
 const filterIndustry = ref('')
+const filterValueScore = ref(null)
 
 // 时间筛选
 const timeRange = ref('month')
@@ -401,6 +627,14 @@ const dateRange = ref([])
 // 分页
 const currentPage = ref(1)
 const pageSize = ref(10)
+
+// 跟进提醒
+const followUpReminders = ref([])
+const reminderStats = ref({ total: 0, overdue_count: 0, today_count: 0 })
+const reminderTab = ref('all')
+
+// 查重警告
+const duplicateWarning = ref({ phone: '', email: '' })
 
 // 行业选项
 const industryOptions = [
@@ -424,7 +658,9 @@ const newCustomer = ref({
   company: '',
   industry: '',
   status: 'potential',
-  notes: ''
+  value_score: 3,
+  cooperation_stage: 'initial',
+  tags: []
 })
 
 const editCustomerForm = ref({
@@ -435,7 +671,9 @@ const editCustomerForm = ref({
   company: '',
   industry: '',
   status: 'potential',
-  notes: ''
+  value_score: 3,
+  cooperation_stage: 'initial',
+  tags: []
 })
 
 const currentCustomer = ref(null)
@@ -486,6 +724,41 @@ const getCustomerStatusType = (status) => {
   return typeMap[status] || 'info'
 }
 
+// 合作阶段映射
+const getStageText = (stage) => {
+  const stageMap = {
+    'initial': '初步接触',
+    'communication': '需求沟通',
+    'proposal': '方案制定',
+    'negotiation': '商务谈判',
+    'signed': '已签约',
+    'cooperating': '合作中'
+  }
+  return stageMap[stage] || stage
+}
+
+const getStageType = (stage) => {
+  const typeMap = {
+    'initial': 'info',
+    'communication': 'primary',
+    'proposal': 'warning',
+    'negotiation': 'danger',
+    'signed': 'success',
+    'cooperating': 'success'
+  }
+  return typeMap[stage] || 'info'
+}
+
+// 标签类型映射
+const getTagType = (type) => {
+  const typeMap = {
+    'value': 'danger',
+    'stage': 'warning',
+    'custom': 'info'
+  }
+  return typeMap[type] || 'info'
+}
+
 // 格式化日期
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
@@ -493,10 +766,31 @@ const formatDate = (dateStr) => {
   return date.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
+    day: '2-digit'
   })
+}
+
+const formatDateShort = (dateStr) => {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+// 检查是否逾期
+const isOverdue = (dateStr) => {
+  if (!dateStr) return false
+  const date = new Date(dateStr)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return date < today
+}
+
+// 检查是否是今天
+const isToday = (dateStr) => {
+  if (!dateStr) return false
+  const date = new Date(dateStr)
+  const today = new Date()
+  return date.toDateString() === today.toDateString()
 }
 
 // 筛选后的客户列表
@@ -535,6 +829,11 @@ const filteredCustomers = computed(() => {
     result = result.filter(customer => customer.industry === filterIndustry.value)
   }
 
+  // 客户价值筛选
+  if (filterValueScore.value) {
+    result = result.filter(customer => customer.value_score === filterValueScore.value)
+  }
+
   // 分页
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
@@ -544,7 +843,6 @@ const filteredCustomers = computed(() => {
 const filteredTotal = computed(() => {
   let result = customers.value
 
-  // 时间筛选
   if (dateRange.value && dateRange.value.length === 2) {
     const startDate = new Date(dateRange.value[0])
     const endDate = new Date(dateRange.value[1])
@@ -573,10 +871,17 @@ const filteredTotal = computed(() => {
     result = result.filter(customer => customer.industry === filterIndustry.value)
   }
 
+  if (filterValueScore.value) {
+    result = result.filter(customer => customer.value_score === filterValueScore.value)
+  }
+
   return result.length
 })
 
 const total = computed(() => customers.value.length)
+const overdueCount = computed(() => reminderStats.value.overdue_count)
+const overdueReminders = computed(() => followUpReminders.value.filter(r => r.is_overdue))
+const todayReminders = computed(() => followUpReminders.value.filter(r => r.days_remaining === 0))
 
 // 获取客户列表
 const fetchCustomers = async () => {
@@ -589,6 +894,47 @@ const fetchCustomers = async () => {
     ElMessage.error('获取客户列表失败')
   } finally {
     loading.value = false
+  }
+}
+
+// 获取跟进提醒
+const fetchFollowUpReminders = async () => {
+  try {
+    const response = await axios.get('/api/customers/follow-up-reminders?days=30')
+    if (response.data.success) {
+      followUpReminders.value = response.data.reminders
+      reminderStats.value = {
+        total: response.data.total,
+        overdue_count: response.data.overdue_count,
+        today_count: response.data.today_count
+      }
+    }
+  } catch (error) {
+    console.error('获取跟进提醒失败:', error)
+  }
+}
+
+// 检查客户重复
+const checkDuplicate = async (field, value, excludeId = null) => {
+  if (!value) {
+    duplicateWarning.value[field] = ''
+    return
+  }
+  
+  try {
+    const response = await axios.post('/api/customers/check-duplicate', {
+      [field]: value,
+      exclude_id: excludeId
+    })
+    
+    if (response.data.is_duplicate) {
+      const customer = response.data.customer
+      duplicateWarning.value[field] = `该${field === 'phone' ? '电话' : '邮箱'}已被客户 "${customer.name}" 使用`
+    } else {
+      duplicateWarning.value[field] = ''
+    }
+  } catch (error) {
+    console.error('查重失败:', error)
   }
 }
 
@@ -637,6 +983,7 @@ const resetFilters = () => {
   searchQuery.value = ''
   filterStatus.value = ''
   filterIndustry.value = ''
+  filterValueScore.value = null
   timeRange.value = 'month'
   setTimeRange('month')
 }
@@ -659,7 +1006,18 @@ const saveCustomer = async () => {
     if (valid) {
       saving.value = true
       try {
-        await axios.post('/api/customers', newCustomer.value)
+        // 转换标签格式
+        const tags = newCustomer.value.tags.map(tag => ({
+          name: tag,
+          type: 'custom'
+        }))
+        
+        const data = {
+          ...newCustomer.value,
+          tags
+        }
+        
+        await axios.post('/api/customers', data)
         ElMessage.success('客户添加成功')
         fetchCustomers()
         showAddDialog.value = false
@@ -682,7 +1040,18 @@ const updateCustomer = async () => {
     if (valid) {
       updating.value = true
       try {
-        await axios.put(`/api/customers/${editCustomerForm.value.id}`, editCustomerForm.value)
+        // 转换标签格式
+        const tags = editCustomerForm.value.tags.map(tag => ({
+          name: tag,
+          type: 'custom'
+        }))
+        
+        const data = {
+          ...editCustomerForm.value,
+          tags
+        }
+        
+        await axios.put(`/api/customers/${editCustomerForm.value.id}`, data)
         ElMessage.success('客户更新成功')
         fetchCustomers()
         showEditDialog.value = false
@@ -733,9 +1102,18 @@ const editCustomer = (customer) => {
     company: customer.company,
     industry: customer.industry,
     status: customer.status,
-    notes: customer.notes || ''
+    value_score: customer.value_score || 3,
+    cooperation_stage: customer.cooperation_stage || 'initial',
+    tags: customer.tags ? customer.tags.map(t => t.name) : []
   }
+  duplicateWarning.value = { phone: '', email: '' }
   showEditDialog.value = true
+}
+
+// 跳转到跟进页面
+const goToFollowUp = (customerId) => {
+  showReminderDialog.value = false
+  emit('navigate', 'follow-ups')
 }
 
 // 重置表单
@@ -747,8 +1125,11 @@ const resetForm = () => {
     company: '',
     industry: '',
     status: 'potential',
-    notes: ''
+    value_score: 3,
+    cooperation_stage: 'initial',
+    tags: []
   }
+  duplicateWarning.value = { phone: '', email: '' }
   addFormRef.value?.resetFields()
 }
 
@@ -761,13 +1142,17 @@ const resetEditForm = () => {
     company: '',
     industry: '',
     status: 'potential',
-    notes: ''
+    value_score: 3,
+    cooperation_stage: 'initial',
+    tags: []
   }
+  duplicateWarning.value = { phone: '', email: '' }
   editFormRef.value?.resetFields()
 }
 
 onMounted(() => {
   fetchCustomers()
+  fetchFollowUpReminders()
   // 默认选择本月
   setTimeRange('month')
 })
@@ -791,6 +1176,11 @@ onMounted(() => {
   gap: 12px;
 }
 
+.header-right {
+  display: flex;
+  gap: 10px;
+}
+
 .header-icon {
   font-size: 28px;
   color: #409eff;
@@ -798,12 +1188,16 @@ onMounted(() => {
 
 .page-header h2 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 24px;
+  color: #303133;
 }
 
 .count-tag {
   font-size: 14px;
+}
+
+.reminder-badge {
+  margin-left: 5px;
 }
 
 .search-card {
@@ -813,43 +1207,37 @@ onMounted(() => {
 .filter-container {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 15px;
 }
 
 .time-filter-section {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 .time-filter-buttons {
-  display: flex;
-}
-
-.time-filter-buttons .el-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-shrink: 0;
 }
 
 .date-range-picker {
-  width: 240px;
+  width: 280px;
 }
 
 .other-filters {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .search-input {
-  width: 240px;
+  width: 250px;
 }
 
 .filter-select {
-  width: 140px;
+  width: 150px;
 }
 
 .table-card {
@@ -862,16 +1250,20 @@ onMounted(() => {
   gap: 8px;
 }
 
-.text-gray {
-  color: #909399;
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.customer-tag {
+  margin-right: 5px;
 }
 
 .pagination-container {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #ebeef5;
 }
 
 .customer-detail {
@@ -881,30 +1273,28 @@ onMounted(() => {
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.detail-title {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: 15px;
+  margin-bottom: 20px;
 }
 
 .detail-title h3 {
-  margin: 0;
+  margin: 0 0 8px 0;
   font-size: 20px;
-  font-weight: 600;
+}
+
+.detail-tags {
+  display: flex;
+  gap: 8px;
 }
 
 .detail-actions {
   display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid #ebeef5;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.text-gray {
+  color: #909399;
 }
 </style>
