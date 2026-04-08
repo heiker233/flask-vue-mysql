@@ -166,6 +166,11 @@
                   <el-checkbox v-model="todo.completed" @change="handleTodoChange(todo)">
                     <span :class="{ 'completed': todo.completed }">{{ todo.content }}</span>
                   </el-checkbox>
+                  <div class="todo-due" v-if="todo.due_date && !todo.completed">
+                    <el-tag size="small" :type="getDueDateType(todo.due_date)">
+                      截止: {{ formatDueDate(todo.due_date) }}
+                    </el-tag>
+                  </div>
                 </div>
                 <div class="todo-right">
                   <el-tag :type="getPriorityType(todo.priority)" size="small">
@@ -284,6 +289,14 @@
             <el-radio-button label="low">低</el-radio-button>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="截止日期" prop="due_date">
+          <el-date-picker
+            v-model="todoForm.due_date"
+            type="datetime"
+            placeholder="选择截止日期时间"
+            value-format="YYYY-MM-DD HH:mm:ss"
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="todoDialogVisible = false">取消</el-button>
@@ -345,7 +358,8 @@ const todoForm = ref({
   id: null,
   content: '',
   priority: 'medium',
-  completed: false
+  completed: false,
+  due_date: ''
 })
 
 // 待办事项验证规则
@@ -396,15 +410,17 @@ const formatInteger = (num) => {
 
 const formatTime = (timeStr) => {
   const date = new Date(timeStr)
+  // 加上8小时时差（中国时区）
+  const localDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
   const now = new Date()
-  const diff = now - date
+  const diff = now - localDate
   
   if (diff < 60000) return '刚刚'
   if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
   if (diff < 604800000) return `${Math.floor(diff / 86400000)}天前`
   
-  return date.toLocaleDateString('zh-CN')
+  return localDate.toLocaleDateString('zh-CN')
 }
 
 const getPriorityType = (priority) => {
@@ -425,6 +441,20 @@ const getActivityTypeTag = (type) => {
 const getActivityTypeLabel = (type) => {
   const labels = { customer: '新增客户', deal: '新增交易', follow: '跟进记录' }
   return labels[type] || '其他'
+}
+
+const formatDueDate = (dateStr) => {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return `${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+const getDueDateType = (dateStr) => {
+  if (!dateStr) return 'info'
+  const diff = new Date(dateStr).getTime() - new Date().getTime()
+  if (diff < 0) return 'danger' // 已过期
+  if (diff < 86400000) return 'warning' // 24小时内到期
+  return 'success'
 }
 
 // 数据获取方法
@@ -891,6 +921,13 @@ onMounted(() => {
 .todo-left {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.todo-due {
+  margin-left: 24px;
+  margin-top: 4px;
 }
 
 .todo-right {

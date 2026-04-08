@@ -7,9 +7,8 @@
         <el-tag type="info" class="count-tag">共 {{ total }} 位客户</el-tag>
       </div>
       <div class="header-right">
-        <el-button type="warning" @click="showReminderDialog = true" :icon="Bell">
-          跟进提醒
-          <el-badge v-if="overdueCount > 0" :value="overdueCount" class="reminder-badge" />
+        <el-button type="success" @click="showExportDialog = true" :icon="Download">
+          导出数据
         </el-button>
         <el-button type="primary" @click="showAddDialog = true" :icon="Plus">
           添加客户
@@ -70,7 +69,7 @@
               />
             </div>
             
-            <!-- 其他筛选条件 -->
+            <!-- 基础筛选条件 -->
             <div class="other-filters">
               <el-input
                 v-model="searchQuery"
@@ -105,20 +104,75 @@
                   :value="industry"
                 />
               </el-select>
-              <el-select
-                v-model="filterValueScore"
-                placeholder="客户价值"
-                clearable
-                @change="handleSearch"
-                class="filter-select"
-              >
-                <el-option label="⭐⭐⭐⭐⭐ 高价值" :value="5" />
-                <el-option label="⭐⭐⭐⭐ 较高价值" :value="4" />
-                <el-option label="⭐⭐⭐ 中等价值" :value="3" />
-                <el-option label="⭐⭐ 较低价值" :value="2" />
-                <el-option label="⭐ 低价值" :value="1" />
-              </el-select>
+              <el-button type="primary" @click="showAdvancedSearch = !showAdvancedSearch" :icon="showAdvancedSearch ? ArrowUp : ArrowDown">
+                {{ showAdvancedSearch ? '收起' : '高级搜索' }}
+              </el-button>
               <el-button @click="resetFilters" :icon="RefreshRight">重置</el-button>
+            </div>
+            
+            <!-- 高级搜索区域 -->
+            <div v-if="showAdvancedSearch" class="advanced-search">
+              <el-divider content-position="left">高级筛选</el-divider>
+              <el-row :gutter="20">
+                <el-col :xs="24" :sm="12" :md="6">
+                  <el-form-item label="合作阶段">
+                    <el-select v-model="advancedFilters.cooperation_stage" placeholder="选择合作阶段" clearable @change="handleSearch" style="width: 100%">
+                      <el-option label="初步接触" value="initial" />
+                      <el-option label="需求沟通" value="communication" />
+                      <el-option label="方案制定" value="proposal" />
+                      <el-option label="商务谈判" value="negotiation" />
+                      <el-option label="已签约" value="signed" />
+                      <el-option label="合作中" value="cooperating" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12" :md="6">
+                  <el-form-item label="负责人">
+                    <el-select v-model="advancedFilters.assigned_to" placeholder="选择负责人" clearable @change="handleSearch" style="width: 100%">
+                      <el-option
+                        v-for="user in userList"
+                        :key="user.id"
+                        :label="user.username"
+                        :value="user.id"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12" :md="6">
+                  <el-form-item label="评分范围">
+                    <div class="score-range">
+                      <el-rate v-model="advancedFilters.value_score_min" :max="5" />
+                      <span class="range-separator">至</span>
+                      <el-rate v-model="advancedFilters.value_score_max" :max="5" />
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12" :md="6">
+                  <el-form-item label="电话前缀">
+                    <el-input v-model="advancedFilters.phone_prefix" placeholder="如: 138" clearable @input="handleSearch" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+              <el-row :gutter="20">
+                <el-col :xs="24" :sm="12" :md="6">
+                  <el-form-item label="排序字段">
+                    <el-select v-model="sortBy" placeholder="选择排序字段" @change="handleSearch" style="width: 100%">
+                      <el-option label="创建时间" value="created_at" />
+                      <el-option label="价值评分" value="value_score" />
+                      <el-option label="客户姓名" value="name" />
+                      <el-option label="公司名称" value="company" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12" :md="6">
+                  <el-form-item label="排序方式">
+                    <el-radio-group v-model="sortOrder" @change="handleSearch">
+                      <el-radio-button label="desc">降序</el-radio-button>
+                      <el-radio-button label="asc">升序</el-radio-button>
+                    </el-radio-group>
+                  </el-form-item>
+                </el-col>
+              </el-row>
             </div>
           </div>
         </el-col>
@@ -148,7 +202,7 @@
         </el-table-column>
         <el-table-column prop="phone" label="电话" min-width="120" />
         <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="company" label="公司" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="company" label="公司" min-width="150" show-overflow-tooltip />
         <el-table-column prop="industry" label="行业" min-width="100">
           <template #default="scope">
             <el-tag v-if="scope.row.industry" size="small" effect="plain">
@@ -157,62 +211,49 @@
             <span v-else class="text-gray">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="value_score" label="价值" width="100" align="center">
+        <el-table-column prop="status" label="状态" width="100" align="center" sortable>
           <template #default="scope">
-            <el-rate v-model="scope.row.value_score" disabled show-score text-color="#ff9900" />
-          </template>
-        </el-table-column>
-        <el-table-column prop="cooperation_stage" label="合作阶段" width="100" align="center">
-          <template #default="scope">
-            <el-tag :type="getStageType(scope.row.cooperation_stage)" size="small">
-              {{ getStageText(scope.row.cooperation_stage) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="tags" label="标签" min-width="120">
-          <template #default="scope">
-            <div class="tag-list">
-              <el-tag
-                v-for="tag in scope.row.tags.slice(0, 3)"
-                :key="tag.id"
-                :type="getTagType(tag.type)"
-                size="small"
-                class="customer-tag"
-              >
-                {{ tag.name }}
-              </el-tag>
-              <el-tag v-if="scope.row.tags.length > 3" size="small" type="info">+{{ scope.row.tags.length - 3 }}</el-tag>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="next_follow_date" label="下次跟进" width="120" align="center">
-          <template #default="scope">
-            <el-tag v-if="isOverdue(scope.row.next_follow_date)" type="danger" size="small">
-              已逾期
-            </el-tag>
-            <el-tag v-else-if="isToday(scope.row.next_follow_date)" type="warning" size="small">
-              今天
-            </el-tag>
-            <span v-else-if="scope.row.next_follow_date" class="text-gray">
-              {{ formatDateShort(scope.row.next_follow_date) }}
-            </span>
-            <span v-else class="text-gray">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="90" align="center">
-          <template #default="scope">
-            <el-tag :type="getCustomerStatusType(scope.row.status)" effect="light" size="small">
+            <el-tag :type="getCustomerStatusType(scope.row.status)" effect="light">
               {{ getCustomerStatusText(scope.row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column prop="value_score" label="价值评分" width="150" align="center" sortable>
+          <template #default="scope">
+            <div class="score-display" @click="openScoreEdit(scope.row)">
+              <el-rate 
+                v-model="scope.row.value_score" 
+                :max="5"
+                disabled
+                class="readonly-rate"
+              />
+              <el-icon class="edit-icon"><Edit /></el-icon>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="assignee" label="负责人" width="100" align="center">
+          <template #default="scope">
+            <el-tag v-if="scope.row.assignee" type="primary" size="small">
+              {{ scope.row.assignee.username }}
+            </el-tag>
+            <span v-else class="text-gray">未分配</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable>
+          <template #default="scope">
+            {{ formatDate(scope.row.created_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="scope">
             <el-button type="primary" link :icon="View" @click="viewCustomer(scope.row)">
               查看
             </el-button>
             <el-button type="primary" link :icon="Edit" @click="editCustomer(scope.row)">
               编辑
+            </el-button>
+            <el-button type="warning" link :icon="User" @click="assignCustomer(scope.row)">
+              分配
             </el-button>
             <el-button type="danger" link :icon="Delete" @click="deleteCustomer(scope.row.id)">
               删除
@@ -239,7 +280,7 @@
     <el-dialog
       v-model="showAddDialog"
       title="添加客户"
-      width="700px"
+      width="600px"
       destroy-on-close
     >
       <el-form
@@ -257,22 +298,12 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="电话" prop="phone">
-              <el-input 
-                v-model="newCustomer.phone" 
-                placeholder="请输入客户电话"
-                @blur="checkDuplicate('phone', newCustomer.phone)"
-              />
-              <el-alert v-if="duplicateWarning.phone" :title="duplicateWarning.phone" type="warning" :closable="false" show-icon />
+              <el-input v-model="newCustomer.phone" placeholder="请输入客户电话" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-form-item label="邮箱" prop="email">
-          <el-input 
-            v-model="newCustomer.email" 
-            placeholder="请输入客户邮箱"
-            @blur="checkDuplicate('email', newCustomer.email)"
-          />
-          <el-alert v-if="duplicateWarning.email" :title="duplicateWarning.email" type="warning" :closable="false" show-icon />
+          <el-input v-model="newCustomer.email" placeholder="请输入客户邮箱" />
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
@@ -293,45 +324,8 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="客户价值" prop="value_score">
-              <el-rate v-model="newCustomer.value_score" show-score />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="合作阶段" prop="cooperation_stage">
-              <el-select v-model="newCustomer.cooperation_stage" placeholder="请选择合作阶段" style="width: 100%">
-                <el-option label="初步接触" value="initial" />
-                <el-option label="需求沟通" value="communication" />
-                <el-option label="方案制定" value="proposal" />
-                <el-option label="商务谈判" value="negotiation" />
-                <el-option label="已签约" value="signed" />
-                <el-option label="合作中" value="cooperating" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="客户标签" prop="tags">
-          <el-select
-            v-model="newCustomer.tags"
-            multiple
-            filterable
-            allow-create
-            placeholder="请选择或输入标签"
-            style="width: 100%"
-          >
-            <el-option-group label="价值标签">
-              <el-option label="高价值客户" value="高价值客户" />
-              <el-option label="VIP客户" value="VIP客户" />
-              <el-option label="长期合作" value="长期合作" />
-            </el-option-group>
-            <el-option-group label="阶段标签">
-              <el-option label="新客户" value="新客户" />
-              <el-option label="待跟进" value="待跟进" />
-              <el-option label="重点客户" value="重点客户" />
-            </el-option-group>
-          </el-select>
+        <el-form-item label="价值评分" prop="value_score">
+          <el-rate v-model="newCustomer.value_score" :max="5" show-score />
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="newCustomer.status">
@@ -339,6 +333,16 @@
             <el-radio-button label="active">活跃客户</el-radio-button>
             <el-radio-button label="lost">已流失</el-radio-button>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="备注" prop="notes">
+          <el-input
+            v-model="newCustomer.notes"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入客户备注信息"
+            maxlength="500"
+            show-word-limit
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -351,7 +355,7 @@
     <el-dialog
       v-model="showEditDialog"
       title="编辑客户"
-      width="700px"
+      width="600px"
       destroy-on-close
     >
       <el-form
@@ -369,22 +373,12 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="电话" prop="phone">
-              <el-input 
-                v-model="editCustomerForm.phone" 
-                placeholder="请输入客户电话"
-                @blur="checkDuplicate('phone', editCustomerForm.phone, editCustomerForm.id)"
-              />
-              <el-alert v-if="duplicateWarning.phone" :title="duplicateWarning.phone" type="warning" :closable="false" show-icon />
+              <el-input v-model="editCustomerForm.phone" placeholder="请输入客户电话" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-form-item label="邮箱" prop="email">
-          <el-input 
-            v-model="editCustomerForm.email" 
-            placeholder="请输入客户邮箱"
-            @blur="checkDuplicate('email', editCustomerForm.email, editCustomerForm.id)"
-          />
-          <el-alert v-if="duplicateWarning.email" :title="duplicateWarning.email" type="warning" :closable="false" show-icon />
+          <el-input v-model="editCustomerForm.email" placeholder="请输入客户邮箱" />
         </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
@@ -405,45 +399,8 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="客户价值" prop="value_score">
-              <el-rate v-model="editCustomerForm.value_score" show-score />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="合作阶段" prop="cooperation_stage">
-              <el-select v-model="editCustomerForm.cooperation_stage" placeholder="请选择合作阶段" style="width: 100%">
-                <el-option label="初步接触" value="initial" />
-                <el-option label="需求沟通" value="communication" />
-                <el-option label="方案制定" value="proposal" />
-                <el-option label="商务谈判" value="negotiation" />
-                <el-option label="已签约" value="signed" />
-                <el-option label="合作中" value="cooperating" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="客户标签" prop="tags">
-          <el-select
-            v-model="editCustomerForm.tags"
-            multiple
-            filterable
-            allow-create
-            placeholder="请选择或输入标签"
-            style="width: 100%"
-          >
-            <el-option-group label="价值标签">
-              <el-option label="高价值客户" value="高价值客户" />
-              <el-option label="VIP客户" value="VIP客户" />
-              <el-option label="长期合作" value="长期合作" />
-            </el-option-group>
-            <el-option-group label="阶段标签">
-              <el-option label="新客户" value="新客户" />
-              <el-option label="待跟进" value="待跟进" />
-              <el-option label="重点客户" value="重点客户" />
-            </el-option-group>
-          </el-select>
+        <el-form-item label="价值评分" prop="value_score">
+          <el-rate v-model="editCustomerForm.value_score" :max="5" show-score />
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="editCustomerForm.status">
@@ -451,6 +408,16 @@
             <el-radio-button label="active">活跃客户</el-radio-button>
             <el-radio-button label="lost">已流失</el-radio-button>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="备注" prop="notes">
+          <el-input
+            v-model="editCustomerForm.notes"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入客户备注信息"
+            maxlength="500"
+            show-word-limit
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -472,14 +439,9 @@
           </el-avatar>
           <div class="detail-title">
             <h3>{{ currentCustomer.name }}</h3>
-            <div class="detail-tags">
-              <el-tag :type="getCustomerStatusType(currentCustomer.status)" effect="light">
-                {{ getCustomerStatusText(currentCustomer.status) }}
-              </el-tag>
-              <el-tag :type="getStageType(currentCustomer.cooperation_stage)" effect="plain">
-                {{ getStageText(currentCustomer.cooperation_stage) }}
-              </el-tag>
-            </div>
+            <el-tag :type="getCustomerStatusType(currentCustomer.status)" effect="light">
+              {{ getCustomerStatusText(currentCustomer.status) }}
+            </el-tag>
           </div>
         </div>
         <el-descriptions :column="2" border>
@@ -487,28 +449,9 @@
           <el-descriptions-item label="邮箱">{{ currentCustomer.email || '-' }}</el-descriptions-item>
           <el-descriptions-item label="公司">{{ currentCustomer.company || '-' }}</el-descriptions-item>
           <el-descriptions-item label="行业">{{ currentCustomer.industry || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="客户价值">
-            <el-rate v-model="currentCustomer.value_score" disabled show-score />
-          </el-descriptions-item>
-          <el-descriptions-item label="下次跟进">
-            <el-tag v-if="isOverdue(currentCustomer.next_follow_date)" type="danger">已逾期</el-tag>
-            <span v-else>{{ formatDate(currentCustomer.next_follow_date) || '未设置' }}</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="标签" :span="2">
-            <div class="tag-list">
-              <el-tag
-                v-for="tag in currentCustomer.tags"
-                :key="tag.id"
-                :type="getTagType(tag.type)"
-                class="customer-tag"
-              >
-                {{ tag.name }}
-              </el-tag>
-              <span v-if="!currentCustomer.tags || currentCustomer.tags.length === 0" class="text-gray">暂无标签</span>
-            </div>
-          </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(currentCustomer.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatDate(currentCustomer.updated_at) }}</el-descriptions-item>
+          <el-descriptions-item label="备注" :span="2">{{ currentCustomer.notes || '-' }}</el-descriptions-item>
         </el-descriptions>
         <div class="detail-actions">
           <el-button type="primary" @click="showViewDialog = false; editCustomer(currentCustomer)">
@@ -518,79 +461,69 @@
         </div>
       </div>
     </el-dialog>
-
-    <!-- 跟进提醒对话框 -->
+    <!-- 分配客户对话框 -->
     <el-dialog
-      v-model="showReminderDialog"
-      title="客户跟进提醒"
-      width="800px"
+      v-model="showAssignDialog"
+      title="分配客户"
+      width="400px"
+      destroy-on-close
     >
-      <el-tabs v-model="reminderTab">
-        <el-tab-pane label="全部提醒" name="all">
-          <el-alert
-            v-if="reminderStats.overdue_count > 0"
-            :title="`有 ${reminderStats.overdue_count} 个客户跟进已逾期，请尽快处理！`"
-            type="error"
-            :closable="false"
-            show-icon
-            style="margin-bottom: 15px;"
-          />
-          <el-table :data="followUpReminders" border stripe>
-            <el-table-column prop="customer_name" label="客户姓名" min-width="100" />
-            <el-table-column prop="customer_company" label="公司" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="next_follow_date" label="下次跟进时间" width="120">
-              <template #default="scope">
-                <el-tag v-if="scope.row.is_overdue" type="danger" size="small">已逾期</el-tag>
-                <el-tag v-else-if="scope.row.days_remaining === 0" type="warning" size="small">今天</el-tag>
-                <span v-else>{{ formatDate(scope.row.next_follow_date) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="last_follow_content" label="上次跟进内容" min-width="200" show-overflow-tooltip />
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="scope">
-                <el-button type="primary" link @click="goToFollowUp(scope.row.customer_id)">
-                  去跟进
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="已逾期" name="overdue">
-          <el-table :data="overdueReminders" border stripe>
-            <el-table-column prop="customer_name" label="客户姓名" min-width="100" />
-            <el-table-column prop="customer_company" label="公司" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="next_follow_date" label="应跟进时间" width="120">
-              <template #default="scope">
-                <span style="color: #f56c6c;">{{ formatDate(scope.row.next_follow_date) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="last_follow_content" label="上次跟进内容" min-width="200" show-overflow-tooltip />
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="scope">
-                <el-button type="primary" link @click="goToFollowUp(scope.row.customer_id)">
-                  去跟进
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="今天" name="today">
-          <el-table :data="todayReminders" border stripe>
-            <el-table-column prop="customer_name" label="客户姓名" min-width="100" />
-            <el-table-column prop="customer_company" label="公司" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="customer_phone" label="电话" min-width="120" />
-            <el-table-column prop="last_follow_content" label="上次跟进内容" min-width="200" show-overflow-tooltip />
-            <el-table-column label="操作" width="120" fixed="right">
-              <template #default="scope">
-                <el-button type="primary" link @click="goToFollowUp(scope.row.customer_id)">
-                  去跟进
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+      <el-form label-width="100px">
+        <el-form-item label="分配给">
+          <el-select v-model="assignForm.assigned_to" placeholder="请选择负责人" style="width: 100%">
+            <el-option label="未分配" :value="null" />
+            <el-option
+              v-for="user in userOptions"
+              :key="user.id"
+              :label="user.username"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAssignDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitAssign" :loading="assigning">确定</el-button>
+      </template>
     </el-dialog>
+
+    <!-- 评分编辑对话框 -->
+    <el-dialog
+      v-model="showScoreEditDialog"
+      title="修改客户评分"
+      width="400px"
+      destroy-on-close
+    >
+      <el-form label-width="80px">
+        <el-form-item label="客户">
+          <span>{{ scoreEditForm.name }}</span>
+        </el-form-item>
+        <el-form-item label="评分">
+          <el-rate 
+            v-model="scoreEditForm.value_score" 
+            :max="5"
+            show-score
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showScoreEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveScore">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 导出对话框 -->
+    <ExportDialog
+      v-model="showExportDialog"
+      title="导出客户数据"
+      data-type="customers"
+      :fields="customerExportFields"
+      :default-fields="defaultExportFields"
+      :filters="currentFilters"
+      :total-count="total"
+      :filtered-count="filteredTotal"
+      @export-success="() => ElMessage.success('客户数据导出成功')"
+    />
   </div>
 </template>
 
@@ -598,11 +531,21 @@
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { User, Plus, Search, RefreshRight, View, Edit, Delete, Calendar, Setting, Grid, Bell } from '@element-plus/icons-vue'
+import { User, Plus, Search, RefreshRight, View, Edit, Delete, Calendar, Setting, Grid, ArrowUp, ArrowDown, Download } from '@element-plus/icons-vue'
+import ExportDialog from './ExportDialog.vue'
 
-const emit = defineEmits(['navigate'])
+const props = defineProps({
+  currentUser: {
+    type: Object,
+    default: () => ({ role: 'user' })
+  }
+})
 
-// 数据
+// 判断是否为管理员
+const isAdmin = computed(() => {
+  return props.currentUser?.role === 'admin'
+})
+
 const customers = ref([])
 const loading = ref(false)
 const saving = ref(false)
@@ -610,15 +553,86 @@ const updating = ref(false)
 const showAddDialog = ref(false)
 const showEditDialog = ref(false)
 const showViewDialog = ref(false)
-const showReminderDialog = ref(false)
+const showAssignDialog = ref(false)
+const showScoreEditDialog = ref(false)
 const addFormRef = ref(null)
 const editFormRef = ref(null)
+
+// 评分编辑表单
+const scoreEditForm = ref({
+  id: null,
+  name: '',
+  value_score: 0
+})
+
+const assigning = ref(false)
+const userOptions = ref([])
+const assignForm = ref({
+  id: null,
+  assigned_to: null
+})
+
+// 导出对话框
+const showExportDialog = ref(false)
+
+// 客户导出字段定义
+const customerExportFields = [
+  { key: 'id', label: '客户ID', description: '系统唯一标识' },
+  { key: 'name', label: '客户姓名', description: '客户姓名' },
+  { key: 'phone', label: '联系电话', description: '客户电话' },
+  { key: 'email', label: '电子邮箱', description: '客户邮箱' },
+  { key: 'company', label: '公司名称', description: '所属公司' },
+  { key: 'industry', label: '所属行业', description: '行业分类' },
+  { key: 'status', label: '客户状态', description: '潜在/活跃/流失' },
+  { key: 'value_score', label: '价值评分', description: '1-5星评分' },
+  { key: 'cooperation_stage', label: '合作阶段', description: '当前合作进度' },
+  { key: 'assigned_to', label: '负责人ID', description: '负责人用户ID' },
+  { key: 'assignee_name', label: '负责人姓名', description: '负责人姓名' },
+  { key: 'created_at', label: '创建时间', description: '客户录入时间' },
+  { key: 'updated_at', label: '更新时间', description: '最后更新时间' },
+  { key: 'notes', label: '备注信息', description: '客户备注' }
+]
+
+// 默认导出字段
+const defaultExportFields = ['name', 'phone', 'email', 'company', 'industry', 'status', 'value_score', 'created_at']
+
+// 获取当前筛选条件
+const currentFilters = computed(() => {
+  return {
+    keyword: searchQuery.value,
+    status: filterStatus.value,
+    industry: filterIndustry.value,
+    cooperation_stage: advancedFilters.value.cooperation_stage,
+    assigned_to: advancedFilters.value.assigned_to,
+    value_score_min: advancedFilters.value.value_score_min,
+    value_score_max: advancedFilters.value.value_score_max,
+    phone_prefix: advancedFilters.value.phone_prefix,
+    start_date: dateRange.value?.[0],
+    end_date: dateRange.value?.[1]
+  }
+})
 
 // 搜索和筛选
 const searchQuery = ref('')
 const filterStatus = ref('')
 const filterIndustry = ref('')
-const filterValueScore = ref(null)
+const showAdvancedSearch = ref(false)
+
+// 高级筛选条件
+const advancedFilters = ref({
+  cooperation_stage: '',
+  assigned_to: null,
+  value_score_min: 0,
+  value_score_max: 5,
+  phone_prefix: ''
+})
+
+// 排序
+const sortBy = ref('created_at')
+const sortOrder = ref('desc')
+
+// 用户列表
+const userList = ref([])
 
 // 时间筛选
 const timeRange = ref('month')
@@ -627,14 +641,6 @@ const dateRange = ref([])
 // 分页
 const currentPage = ref(1)
 const pageSize = ref(10)
-
-// 跟进提醒
-const followUpReminders = ref([])
-const reminderStats = ref({ total: 0, overdue_count: 0, today_count: 0 })
-const reminderTab = ref('all')
-
-// 查重警告
-const duplicateWarning = ref({ phone: '', email: '' })
 
 // 行业选项
 const industryOptions = [
@@ -659,8 +665,7 @@ const newCustomer = ref({
   industry: '',
   status: 'potential',
   value_score: 3,
-  cooperation_stage: 'initial',
-  tags: []
+  notes: ''
 })
 
 const editCustomerForm = ref({
@@ -672,8 +677,7 @@ const editCustomerForm = ref({
   industry: '',
   status: 'potential',
   value_score: 3,
-  cooperation_stage: 'initial',
-  tags: []
+  notes: ''
 })
 
 const currentCustomer = ref(null)
@@ -724,73 +728,20 @@ const getCustomerStatusType = (status) => {
   return typeMap[status] || 'info'
 }
 
-// 合作阶段映射
-const getStageText = (stage) => {
-  const stageMap = {
-    'initial': '初步接触',
-    'communication': '需求沟通',
-    'proposal': '方案制定',
-    'negotiation': '商务谈判',
-    'signed': '已签约',
-    'cooperating': '合作中'
-  }
-  return stageMap[stage] || stage
-}
-
-const getStageType = (stage) => {
-  const typeMap = {
-    'initial': 'info',
-    'communication': 'primary',
-    'proposal': 'warning',
-    'negotiation': 'danger',
-    'signed': 'success',
-    'cooperating': 'success'
-  }
-  return typeMap[stage] || 'info'
-}
-
-// 标签类型映射
-const getTagType = (type) => {
-  const typeMap = {
-    'value': 'danger',
-    'stage': 'warning',
-    'custom': 'info'
-  }
-  return typeMap[type] || 'info'
-}
-
-// 格式化日期
+// 格式化日期 - 正确处理UTC时间
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
+  // 将UTC时间字符串转换为本地时间
   const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN', {
+  // 加上8小时时差（中国时区）
+  const localDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+  return localDate.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
-    day: '2-digit'
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
   })
-}
-
-const formatDateShort = (dateStr) => {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return `${date.getMonth() + 1}/${date.getDate()}`
-}
-
-// 检查是否逾期
-const isOverdue = (dateStr) => {
-  if (!dateStr) return false
-  const date = new Date(dateStr)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return date < today
-}
-
-// 检查是否是今天
-const isToday = (dateStr) => {
-  if (!dateStr) return false
-  const date = new Date(dateStr)
-  const today = new Date()
-  return date.toDateString() === today.toDateString()
 }
 
 // 筛选后的客户列表
@@ -829,11 +780,6 @@ const filteredCustomers = computed(() => {
     result = result.filter(customer => customer.industry === filterIndustry.value)
   }
 
-  // 客户价值筛选
-  if (filterValueScore.value) {
-    result = result.filter(customer => customer.value_score === filterValueScore.value)
-  }
-
   // 分页
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
@@ -843,6 +789,7 @@ const filteredCustomers = computed(() => {
 const filteredTotal = computed(() => {
   let result = customers.value
 
+  // 时间筛选
   if (dateRange.value && dateRange.value.length === 2) {
     const startDate = new Date(dateRange.value[0])
     const endDate = new Date(dateRange.value[1])
@@ -871,23 +818,49 @@ const filteredTotal = computed(() => {
     result = result.filter(customer => customer.industry === filterIndustry.value)
   }
 
-  if (filterValueScore.value) {
-    result = result.filter(customer => customer.value_score === filterValueScore.value)
-  }
-
   return result.length
 })
 
 const total = computed(() => customers.value.length)
-const overdueCount = computed(() => reminderStats.value.overdue_count)
-const overdueReminders = computed(() => followUpReminders.value.filter(r => r.is_overdue))
-const todayReminders = computed(() => followUpReminders.value.filter(r => r.days_remaining === 0))
 
 // 获取客户列表
 const fetchCustomers = async () => {
   loading.value = true
   try {
-    const response = await axios.get('/api/customers')
+    const params = new URLSearchParams()
+    
+    if (searchQuery.value) {
+      params.append('keyword', searchQuery.value)
+    }
+    if (filterStatus.value) {
+      params.append('status', filterStatus.value)
+    }
+    if (filterIndustry.value) {
+      params.append('industry', filterIndustry.value)
+    }
+    if (advancedFilters.value.cooperation_stage) {
+      params.append('cooperation_stage', advancedFilters.value.cooperation_stage)
+    }
+    if (advancedFilters.value.assigned_to) {
+      params.append('assigned_to', advancedFilters.value.assigned_to)
+    }
+    if (advancedFilters.value.value_score_min > 0) {
+      params.append('value_score_min', advancedFilters.value.value_score_min)
+    }
+    if (advancedFilters.value.value_score_max < 5) {
+      params.append('value_score_max', advancedFilters.value.value_score_max)
+    }
+    if (advancedFilters.value.phone_prefix) {
+      params.append('phone_prefix', advancedFilters.value.phone_prefix)
+    }
+    if (dateRange.value && dateRange.value.length === 2) {
+      params.append('start_date', dateRange.value[0])
+      params.append('end_date', dateRange.value[1])
+    }
+    params.append('sort_by', sortBy.value)
+    params.append('sort_order', sortOrder.value)
+    
+    const response = await axios.get(`/api/customers?${params.toString()}`)
     customers.value = response.data
   } catch (error) {
     console.error('获取客户失败:', error)
@@ -897,44 +870,13 @@ const fetchCustomers = async () => {
   }
 }
 
-// 获取跟进提醒
-const fetchFollowUpReminders = async () => {
+// 获取用户列表
+const fetchUserList = async () => {
   try {
-    const response = await axios.get('/api/customers/follow-up-reminders?days=30')
-    if (response.data.success) {
-      followUpReminders.value = response.data.reminders
-      reminderStats.value = {
-        total: response.data.total,
-        overdue_count: response.data.overdue_count,
-        today_count: response.data.today_count
-      }
-    }
+    const response = await axios.get('/api/users')
+    userList.value = response.data
   } catch (error) {
-    console.error('获取跟进提醒失败:', error)
-  }
-}
-
-// 检查客户重复
-const checkDuplicate = async (field, value, excludeId = null) => {
-  if (!value) {
-    duplicateWarning.value[field] = ''
-    return
-  }
-  
-  try {
-    const response = await axios.post('/api/customers/check-duplicate', {
-      [field]: value,
-      exclude_id: excludeId
-    })
-    
-    if (response.data.is_duplicate) {
-      const customer = response.data.customer
-      duplicateWarning.value[field] = `该${field === 'phone' ? '电话' : '邮箱'}已被客户 "${customer.name}" 使用`
-    } else {
-      duplicateWarning.value[field] = ''
-    }
-  } catch (error) {
-    console.error('查重失败:', error)
+    console.error('获取用户列表失败:', error)
   }
 }
 
@@ -983,8 +925,17 @@ const resetFilters = () => {
   searchQuery.value = ''
   filterStatus.value = ''
   filterIndustry.value = ''
-  filterValueScore.value = null
   timeRange.value = 'month'
+  showAdvancedSearch.value = false
+  advancedFilters.value = {
+    cooperation_stage: '',
+    assigned_to: null,
+    value_score_min: 0,
+    value_score_max: 5,
+    phone_prefix: ''
+  }
+  sortBy.value = 'created_at'
+  sortOrder.value = 'desc'
   setTimeRange('month')
 }
 
@@ -1006,20 +957,16 @@ const saveCustomer = async () => {
     if (valid) {
       saving.value = true
       try {
-        // 转换标签格式
-        const tags = newCustomer.value.tags.map(tag => ({
-          name: tag,
-          type: 'custom'
-        }))
-        
-        const data = {
+        const response = await axios.post('/api/customers', newCustomer.value)
+        // 将新添加的客户添加到列表开头
+        const newCustomerData = response.data.customer || {
           ...newCustomer.value,
-          tags
+          id: response.data.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         }
-        
-        await axios.post('/api/customers', data)
+        customers.value.unshift(newCustomerData)
         ElMessage.success('客户添加成功')
-        fetchCustomers()
         showAddDialog.value = false
         resetForm()
       } catch (error) {
@@ -1040,20 +987,13 @@ const updateCustomer = async () => {
     if (valid) {
       updating.value = true
       try {
-        // 转换标签格式
-        const tags = editCustomerForm.value.tags.map(tag => ({
-          name: tag,
-          type: 'custom'
-        }))
-        
-        const data = {
-          ...editCustomerForm.value,
-          tags
+        await axios.put(`/api/customers/${editCustomerForm.value.id}`, editCustomerForm.value)
+        // 直接更新本地数据
+        const index = customers.value.findIndex(c => c.id === editCustomerForm.value.id)
+        if (index !== -1) {
+          customers.value[index] = { ...customers.value[index], ...editCustomerForm.value }
         }
-        
-        await axios.put(`/api/customers/${editCustomerForm.value.id}`, data)
         ElMessage.success('客户更新成功')
-        fetchCustomers()
         showEditDialog.value = false
         resetEditForm()
       } catch (error) {
@@ -1076,13 +1016,46 @@ const deleteCustomer = async (id) => {
     })
 
     await axios.delete(`/api/customers/${id}`)
+    // 直接从本地列表中移除
+    const index = customers.value.findIndex(c => c.id === id)
+    if (index !== -1) {
+      customers.value.splice(index, 1)
+    }
     ElMessage.success('客户删除成功')
-    fetchCustomers()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('删除客户失败:', error)
       ElMessage.error(error.response?.data?.message || '删除客户失败')
     }
+  }
+}
+
+// 打开评分编辑对话框
+const openScoreEdit = (customer) => {
+  scoreEditForm.value = {
+    id: customer.id,
+    name: customer.name,
+    value_score: customer.value_score || 0
+  }
+  showScoreEditDialog.value = true
+}
+
+// 保存评分
+const saveScore = async () => {
+  try {
+    await axios.put(`/api/customers/${scoreEditForm.value.id}`, { 
+      value_score: scoreEditForm.value.value_score 
+    })
+    // 直接更新本地数据，不重新加载整个列表
+    const customer = customers.value.find(c => c.id === scoreEditForm.value.id)
+    if (customer) {
+      customer.value_score = scoreEditForm.value.value_score
+    }
+    ElMessage.success('评分更新成功')
+    showScoreEditDialog.value = false
+  } catch (error) {
+    console.error('更新评分失败:', error)
+    ElMessage.error(error.response?.data?.message || '更新评分失败')
   }
 }
 
@@ -1103,17 +1076,52 @@ const editCustomer = (customer) => {
     industry: customer.industry,
     status: customer.status,
     value_score: customer.value_score || 3,
-    cooperation_stage: customer.cooperation_stage || 'initial',
-    tags: customer.tags ? customer.tags.map(t => t.name) : []
+    notes: customer.notes || ''
   }
-  duplicateWarning.value = { phone: '', email: '' }
   showEditDialog.value = true
 }
 
-// 跳转到跟进页面
-const goToFollowUp = (customerId) => {
-  showReminderDialog.value = false
-  emit('navigate', 'follow-ups')
+// 分配客户
+const assignCustomer = async (customer) => {
+  assignForm.value = {
+    id: customer.id,
+    assigned_to: customer.assigned_to
+  }
+  if (userOptions.value.length === 0) {
+    try {
+      const response = await axios.get('/api/users')
+      userOptions.value = response.data
+    } catch (error) {
+      console.error('获取用户列表失败', error)
+    }
+  }
+  showAssignDialog.value = true
+}
+
+const submitAssign = async () => {
+  assigning.value = true
+  try {
+    await axios.put(`/api/customers/${assignForm.value.id}/assign`, {
+      assigned_to: assignForm.value.assigned_to
+    })
+    // 直接更新本地数据
+    const index = customers.value.findIndex(c => c.id === assignForm.value.id)
+    if (index !== -1) {
+      customers.value[index].assigned_to = assignForm.value.assigned_to
+      // 更新负责人名称
+      const user = userOptions.value.find(u => u.id === assignForm.value.assigned_to)
+      if (user) {
+        customers.value[index].assignee = user
+      }
+    }
+    ElMessage.success('客户分配成功')
+    showAssignDialog.value = false
+  } catch (error) {
+    console.error('分配客户失败:', error)
+    ElMessage.error(error.response?.data?.message || '分配客户失败')
+  } finally {
+    assigning.value = false
+  }
 }
 
 // 重置表单
@@ -1126,10 +1134,8 @@ const resetForm = () => {
     industry: '',
     status: 'potential',
     value_score: 3,
-    cooperation_stage: 'initial',
-    tags: []
+    notes: ''
   }
-  duplicateWarning.value = { phone: '', email: '' }
   addFormRef.value?.resetFields()
 }
 
@@ -1143,16 +1149,14 @@ const resetEditForm = () => {
     industry: '',
     status: 'potential',
     value_score: 3,
-    cooperation_stage: 'initial',
-    tags: []
+    notes: ''
   }
-  duplicateWarning.value = { phone: '', email: '' }
   editFormRef.value?.resetFields()
 }
 
 onMounted(() => {
   fetchCustomers()
-  fetchFollowUpReminders()
+  fetchUserList()
   // 默认选择本月
   setTimeRange('month')
 })
@@ -1176,11 +1180,6 @@ onMounted(() => {
   gap: 12px;
 }
 
-.header-right {
-  display: flex;
-  gap: 10px;
-}
-
 .header-icon {
   font-size: 28px;
   color: #409eff;
@@ -1188,16 +1187,12 @@ onMounted(() => {
 
 .page-header h2 {
   margin: 0;
-  font-size: 24px;
-  color: #303133;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .count-tag {
   font-size: 14px;
-}
-
-.reminder-badge {
-  margin-left: 5px;
 }
 
 .search-card {
@@ -1207,37 +1202,65 @@ onMounted(() => {
 .filter-container {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 16px;
 }
 
 .time-filter-section {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .time-filter-buttons {
-  flex-shrink: 0;
+  display: flex;
+}
+
+.time-filter-buttons .el-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .date-range-picker {
-  width: 280px;
+  width: 240px;
 }
 
 .other-filters {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.advanced-search {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.advanced-search .el-divider {
+  margin: 0 0 16px 0;
+}
+
+.score-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.range-separator {
+  color: #909399;
+  font-size: 14px;
 }
 
 .search-input {
-  width: 250px;
+  width: 240px;
 }
 
 .filter-select {
-  width: 150px;
+  width: 140px;
 }
 
 .table-card {
@@ -1250,20 +1273,16 @@ onMounted(() => {
   gap: 8px;
 }
 
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.customer-tag {
-  margin-right: 5px;
+.text-gray {
+  color: #909399;
 }
 
 .pagination-container {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
 }
 
 .customer-detail {
@@ -1273,28 +1292,65 @@ onMounted(() => {
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.detail-title {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .detail-title h3 {
-  margin: 0 0 8px 0;
+  margin: 0;
   font-size: 20px;
-}
-
-.detail-tags {
-  display: flex;
-  gap: 8px;
+  font-weight: 600;
 }
 
 .detail-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
 }
 
-.text-gray {
-  color: #909399;
+/* 评分显示样式 */
+.score-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.score-display:hover {
+  background-color: #f5f7fa;
+}
+
+.score-display:hover .edit-icon {
+  opacity: 1;
+}
+
+.readonly-rate {
+  pointer-events: none;
+}
+
+.readonly-rate :deep(.el-rate__icon) {
+  font-size: 18px;
+}
+
+.edit-icon {
+  font-size: 14px;
+  color: #409eff;
+  opacity: 0;
+  transition: opacity 0.3s;
 }
 </style>

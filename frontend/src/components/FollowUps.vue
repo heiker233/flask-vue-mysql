@@ -6,9 +6,14 @@
         <h2>跟进记录</h2>
         <el-tag type="info" class="count-tag">共 {{ followUps.length }} 条记录</el-tag>
       </div>
-      <el-button type="primary" @click="showAddDialog = true" :icon="Plus">
-        添加记录
-      </el-button>
+      <div class="header-right">
+        <el-button type="success" @click="showExportDialog = true" :icon="Download">
+          导出数据
+        </el-button>
+        <el-button type="primary" @click="showAddDialog = true" :icon="Plus">
+          添加记录
+        </el-button>
+      </div>
     </div>
 
     <!-- 搜索和筛选区域 -->
@@ -124,6 +129,13 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="is_conversion" label="促成交易" width="100" align="center">
+          <template #default="scope">
+            <el-tag :type="scope.row.is_conversion ? 'success' : 'info'" effect="light" size="small">
+              {{ scope.row.is_conversion ? '是' : '否' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="next_follow_date" label="下次跟进时间" width="140">
           <template #default="scope">
             <span v-if="scope.row.next_follow_date" class="next-date">
@@ -224,6 +236,24 @@
             value-format="YYYY-MM-DD"
           />
         </el-form-item>
+        <el-form-item label="关联交易" prop="deal_id">
+          <el-select
+            v-model="newFollowUp.deal_id"
+            placeholder="请选择关联交易（可选）"
+            style="width: 100%"
+            clearable
+          >
+            <el-option
+              v-for="deal in currentCustomerDeals"
+              :key="deal.id"
+              :label="deal.product ? deal.product + ' (¥' + deal.amount + ')' : '交易 ¥' + deal.amount"
+              :value="deal.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="促成交易" prop="is_conversion">
+          <el-switch v-model="newFollowUp.is_conversion" active-text="是" inactive-text="否" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showAddDialog = false">取消</el-button>
@@ -289,20 +319,52 @@
             value-format="YYYY-MM-DD"
           />
         </el-form-item>
+        <el-form-item label="关联交易" prop="deal_id">
+          <el-select
+            v-model="editFollowUpForm.deal_id"
+            placeholder="请选择关联交易（可选）"
+            style="width: 100%"
+            clearable
+          >
+            <el-option
+              v-for="deal in currentCustomerDeals"
+              :key="deal.id"
+              :label="deal.product ? deal.product + ' (¥' + deal.amount + ')' : '交易 ¥' + deal.amount"
+              :value="deal.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="促成交易" prop="is_conversion">
+          <el-switch v-model="editFollowUpForm.is_conversion" active-text="是" inactive-text="否" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showEditDialog = false">取消</el-button>
         <el-button type="primary" @click="updateFollowUp" :loading="updating">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 导出对话框 -->
+    <ExportDialog
+      v-model="showExportDialog"
+      title="导出跟进记录"
+      data-type="follow-ups"
+      :fields="followUpExportFields"
+      :default-fields="defaultExportFields"
+      :filters="currentFilters"
+      :total-count="followUps.length"
+      :filtered-count="filteredFollowUps.length"
+      @export-success="() => ElMessage.success('跟进记录导出成功')"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Message, Plus, Search, RefreshRight, Edit, Delete, Calendar, Setting, Grid } from '@element-plus/icons-vue'
+import { Message, Plus, Search, RefreshRight, Edit, Delete, Calendar, Setting, Grid, Download } from '@element-plus/icons-vue'
+import ExportDialog from './ExportDialog.vue'
 
 const props = defineProps({
   currentUser: {
@@ -319,6 +381,7 @@ const isAdmin = computed(() => {
 const followUps = ref([])
 const customers = ref([])
 const customerOptions = ref([])
+const currentCustomerDeals = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const updating = ref(false)
@@ -328,6 +391,43 @@ const showEditDialog = ref(false)
 const addFormRef = ref(null)
 const editFormRef = ref(null)
 
+// 表单数据
+const newFollowUp = ref({
+  customer_id: '',
+  content: '',
+  follow_type: '',
+  next_follow_date: '',
+  deal_id: null,
+  is_conversion: false
+})
+
+const editFollowUpForm = ref({
+  id: null,
+  customer_id: '',
+  content: '',
+  follow_type: '',
+  next_follow_date: '',
+  deal_id: null,
+  is_conversion: false
+})
+
+// 监听客户ID变化以获取该客户的交易
+const fetchCustomerDeals = async (newVal) => {
+  if (newVal) {
+    try {
+      const res = await axios.get('/api/deals');
+      currentCustomerDeals.value = res.data.filter(d => d.customer_id === newVal);
+    } catch (e) {
+      console.error('获取交易列表失败', e);
+    }
+  } else {
+    currentCustomerDeals.value = [];
+  }
+};
+
+watch(() => newFollowUp.value.customer_id, fetchCustomerDeals);
+watch(() => editFollowUpForm.value.customer_id, fetchCustomerDeals);
+
 // 搜索和筛选
 const searchQuery = ref('')
 const filterType = ref('')
@@ -336,25 +436,40 @@ const filterType = ref('')
 const timeRange = ref('month')
 const dateRange = ref([])
 
+// 导出对话框
+const showExportDialog = ref(false)
+
+// 跟进记录导出字段定义
+const followUpExportFields = [
+  { key: 'id', label: '记录ID', description: '系统唯一标识' },
+  { key: 'customer_id', label: '客户ID', description: '关联客户ID' },
+  { key: 'customer_name', label: '客户姓名', description: '客户名称' },
+  { key: 'deal_id', label: '交易ID', description: '关联交易ID' },
+  { key: 'content', label: '跟进内容', description: '跟进详细内容' },
+  { key: 'follow_type', label: '跟进方式', description: '电话/邮件/面谈等' },
+  { key: 'next_follow_date', label: '下次跟进日期', description: '计划下次跟进时间' },
+  { key: 'is_conversion', label: '是否促成交易', description: '是否成功转化' },
+  { key: 'created_by', label: '创建人ID', description: '记录创建人ID' },
+  { key: 'creator_name', label: '创建人姓名', description: '记录创建人姓名' },
+  { key: 'created_at', label: '创建时间', description: '记录创建时间' }
+]
+
+// 默认导出字段
+const defaultExportFields = ['id', 'customer_name', 'content', 'follow_type', 'next_follow_date', 'is_conversion', 'created_at']
+
+// 获取当前筛选条件
+const currentFilters = computed(() => {
+  return {
+    keyword: searchQuery.value,
+    follow_type: filterType.value,
+    start_date: dateRange.value?.[0],
+    end_date: dateRange.value?.[1]
+  }
+})
+
 // 分页
 const currentPage = ref(1)
 const pageSize = ref(10)
-
-// 表单数据
-const newFollowUp = ref({
-  customer_id: '',
-  content: '',
-  follow_type: '',
-  next_follow_date: ''
-})
-
-const editFollowUpForm = ref({
-  id: null,
-  customer_id: '',
-  content: '',
-  follow_type: '',
-  next_follow_date: ''
-})
 
 // 表单验证规则
 const followUpRules = {
@@ -392,18 +507,22 @@ const getFollowTypeType = (type) => {
   return typeMap[type] || 'info'
 }
 
-// 格式化日期
+// 格式化日期 - 正确处理UTC时间
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
-  return date.toLocaleDateString('zh-CN')
+  // 加上8小时时差（中国时区）
+  const localDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+  return localDate.toLocaleDateString('zh-CN')
 }
 
-// 格式化日期时间
+// 格式化日期时间 - 正确处理UTC时间
 const formatDateTime = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN', {
+  // 加上8小时时差（中国时区）
+  const localDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+  return localDate.toLocaleString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -459,13 +578,16 @@ const filteredFollowUps = computed(() => {
     result = result.filter(followUp => followUp.follow_type === filterType.value)
   }
 
-  // 日期范围筛选
+  // 日期范围筛选 - 根据下次跟进时间筛选
   if (dateRange.value && dateRange.value.length === 2) {
-    const startDate = new Date(dateRange.value[0])
-    const endDate = new Date(dateRange.value[1])
+    const startDateStr = dateRange.value[0] // YYYY-MM-DD
+    const endDateStr = dateRange.value[1]   // YYYY-MM-DD
     result = result.filter(followUp => {
-      const followDate = new Date(followUp.created_at)
-      return followDate >= startDate && followDate <= endDate
+      // 优先根据下次跟进时间筛选，如果没有则根据创建时间筛选
+      const dateStr = followUp.next_follow_date 
+        ? followUp.next_follow_date.substring(0, 10) // 取 YYYY-MM-DD 部分
+        : followUp.created_at.substring(0, 10)
+      return dateStr >= startDateStr && dateStr <= endDateStr
     })
   }
 
@@ -492,11 +614,13 @@ const filteredTotal = computed(() => {
   }
 
   if (dateRange.value && dateRange.value.length === 2) {
-    const startDate = new Date(dateRange.value[0])
-    const endDate = new Date(dateRange.value[1])
+    const startDateStr = dateRange.value[0]
+    const endDateStr = dateRange.value[1]
     result = result.filter(followUp => {
-      const followDate = new Date(followUp.created_at)
-      return followDate >= startDate && followDate <= endDate
+      const dateStr = followUp.next_follow_date
+        ? followUp.next_follow_date.substring(0, 10)
+        : followUp.created_at.substring(0, 10)
+      return dateStr >= startDateStr && dateStr <= endDateStr
     })
   }
 
@@ -515,16 +639,22 @@ const setTimeRange = (range) => {
     const month = now.getMonth()
     
     if (range === 'month') {
+      // 本月第一天
       const start = new Date(year, month, 1)
+      // 本月最后一天（下个月第0天 = 本月最后一天）
+      const end = new Date(year, month + 1, 0)
       dateRange.value = [
         start.toISOString().split('T')[0],
-        now.toISOString().split('T')[0]
+        end.toISOString().split('T')[0]
       ]
     } else if (range === 'year') {
+      // 本年第一天
       const start = new Date(year, 0, 1)
+      // 本年最后一天
+      const end = new Date(year, 11, 31)
       dateRange.value = [
         start.toISOString().split('T')[0],
-        now.toISOString().split('T')[0]
+        end.toISOString().split('T')[0]
       ]
     }
     handleSearch()
@@ -591,7 +721,9 @@ const editFollowUp = async (followUp) => {
     customer_id: followUp.customer_id,
     content: followUp.content,
     follow_type: followUp.follow_type,
-    next_follow_date: followUp.next_follow_date
+    next_follow_date: followUp.next_follow_date,
+    deal_id: followUp.deal_id,
+    is_conversion: followUp.is_conversion
   }
   // 加载所有客户到选项中
   customerLoading.value = true

@@ -31,13 +31,14 @@
             <el-upload
               class="upload-area"
               drag
-              action="/api/import/customers"
+              action="/api/import/preview"
               :headers="uploadHeaders"
               :data="uploadData"
-              :on-success="handleSuccess"
+              :on-success="(res) => handlePreviewSuccess(res, 'customers')"
               :on-error="handleError"
               :before-upload="beforeUpload"
               accept=".xlsx,.xls,.csv"
+              :show-file-list="false"
             >
               <el-icon class="el-icon--upload"><upload-filled /></el-icon>
               <div class="el-upload__text">
@@ -75,13 +76,14 @@
             <el-upload
               class="upload-area"
               drag
-              action="/api/import/deals"
+              action="/api/import/preview"
               :headers="uploadHeaders"
               :data="uploadData"
-              :on-success="handleSuccess"
+              :on-success="(res) => handlePreviewSuccess(res, 'deals')"
               :on-error="handleError"
               :before-upload="beforeUpload"
               accept=".xlsx,.xls,.csv"
+              :show-file-list="false"
             >
               <el-icon class="el-icon--upload"><upload-filled /></el-icon>
               <div class="el-upload__text">
@@ -154,6 +156,32 @@
       </div>
     </el-card>
 
+    <!-- 预览对话框 -->
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="previewType === 'customers' ? '客户数据预览' : '交易数据预览'"
+      width="80%"
+      destroy-on-close
+    >
+      <div class="preview-container">
+        <p class="preview-info">共解析到 {{ previewTotal }} 条数据，以下为前5条预览：</p>
+        <el-table :data="previewData" border style="width: 100%">
+          <el-table-column
+            v-for="col in previewColumns"
+            :key="col"
+            :prop="col"
+            :label="col"
+          />
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="previewDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmImport" :loading="importing">
+          确认导入
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 导入结果对话框 -->
     <el-dialog
       v-model="resultDialogVisible"
@@ -185,6 +213,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload, User, Money, Download, InfoFilled, UploadFilled } from '@element-plus/icons-vue'
+import axios from 'axios'
 
 const props = defineProps({
   currentUser: {
@@ -204,6 +233,15 @@ const importResult = ref({
   message: '',
   errors: []
 })
+
+// 预览状态
+const previewDialogVisible = ref(false)
+const previewType = ref('')
+const previewData = ref([])
+const previewColumns = ref([])
+const previewTotal = ref(0)
+const currentFile = ref(null)
+const importing = ref(false)
 
 // 上传请求头 - 使用token验证，无需手动设置角色
 const uploadHeaders = computed(() => {
@@ -239,7 +277,7 @@ const dealFields = [
   { field: 'expected_close_date', required: false, description: '预期完成日期（YYYY-MM-DD）' }
 ]
 
-// 上传前检查
+// 上传前检查并拦截
 const beforeUpload = (file) => {
   const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
   const isCSV = file.name.endsWith('.csv')
@@ -253,7 +291,45 @@ const beforeUpload = (file) => {
     ElMessage.error('文件大小不能超过 10MB!')
     return false
   }
+  currentFile.value = file
   return true
+}
+
+const handlePreviewSuccess = (response, type) => {
+  if (response.success) {
+    previewType.value = type
+    previewColumns.value = response.columns
+    previewData.value = response.preview_data
+    previewTotal.value = response.total_rows
+    previewDialogVisible.value = true
+  } else {
+    ElMessage.error(response.message || '解析预览数据失败')
+  }
+}
+
+const confirmImport = async () => {
+  if (!currentFile.value) return
+  
+  importing.value = true
+  const formData = new FormData()
+  formData.append('file', currentFile.value)
+  formData.append('user_id', props.currentUser.id)
+
+  try {
+    const url = previewType.value === 'customers' ? '/api/import/customers' : '/api/import/deals'
+    const response = await axios.post(url, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    
+    previewDialogVisible.value = false
+    handleSuccess(response.data)
+  } catch (error) {
+    handleError(error)
+  } finally {
+    importing.value = false
+  }
 }
 
 // 上传成功处理
@@ -271,17 +347,25 @@ const handleSuccess = (response) => {
 // 上传失败处理
 const handleError = (error) => {
   let message = '导入失败'
-  try {
-    const response = JSON.parse(error.message)
-    message = response.error || message
-  } catch (e) {
-    message = error.message || message
+  let errors = []
+  
+  if (error.response && error.response.data) {
+    message = error.response.data.error || error.response.data.message || message
+    errors = error.response.data.errors || []
+  } else if (error.message) {
+    try {
+      const response = JSON.parse(error.message)
+      message = response.error || message
+      errors = response.errors || []
+    } catch (e) {
+      message = error.message
+    }
   }
   
   importResult.value = {
     success: false,
     message: message,
-    errors: []
+    errors: errors
   }
   resultDialogVisible.value = true
   ElMessage.error(message)

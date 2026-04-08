@@ -159,7 +159,120 @@
       </el-row>
     </div>
 
-    <!-- 图表区域 -->
+    <!-- 新增：高级分析图表区域 -->
+    <div class="advanced-stats-section">
+      <el-row :gutter="20">
+        <!-- 销售漏斗分析 -->
+        <el-col :xs="24" :lg="8">
+          <el-card class="chart-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <el-icon><Filter /></el-icon>
+                <span>销售漏斗分析</span>
+                <el-tooltip content="展示从潜在客户到成交客户的转化过程">
+                  <el-icon><InfoFilled /></el-icon>
+                </el-tooltip>
+              </div>
+            </template>
+            <div class="chart-container" v-loading="loading">
+              <div ref="salesFunnelChart" class="chart"></div>
+            </div>
+            <div class="funnel-summary" v-if="salesFunnelData.summary">
+              <el-row :gutter="10">
+                <el-col :span="12">
+                  <div class="summary-item">
+                    <div class="summary-label">总转化率</div>
+                    <div class="summary-value">{{ salesFunnelData.summary.total_conversion_rate }}%</div>
+                  </div>
+                </el-col>
+                <el-col :span="12">
+                  <div class="summary-item">
+                    <div class="summary-label">成交客户</div>
+                    <div class="summary-value">{{ salesFunnelData.summary.closed_customers }}</div>
+                  </div>
+                </el-col>
+              </el-row>
+            </div>
+          </el-card>
+        </el-col>
+
+        <!-- 客户价值分析 -->
+        <el-col :xs="24" :lg="8">
+          <el-card class="chart-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <el-icon><Medal /></el-icon>
+                <span>客户价值分析</span>
+                <el-tooltip content="按交易金额和频次划分高/中/低价值客户">
+                  <el-icon><InfoFilled /></el-icon>
+                </el-tooltip>
+              </div>
+            </template>
+            <div class="chart-container" v-loading="loading">
+              <div ref="customerValueChart" class="chart"></div>
+            </div>
+            <div class="value-summary" v-if="customerValueData.distribution">
+              <el-row :gutter="10">
+                <el-col :span="8">
+                  <div class="value-item high">
+                    <div class="value-label">高价值</div>
+                    <div class="value-count">{{ customerValueData.distribution.high?.count || 0 }}</div>
+                  </div>
+                </el-col>
+                <el-col :span="8">
+                  <div class="value-item medium">
+                    <div class="value-label">中价值</div>
+                    <div class="value-count">{{ customerValueData.distribution.medium?.count || 0 }}</div>
+                  </div>
+                </el-col>
+                <el-col :span="8">
+                  <div class="value-item low">
+                    <div class="value-label">低价值</div>
+                    <div class="value-count">{{ customerValueData.distribution.low?.count || 0 }}</div>
+                  </div>
+                </el-col>
+              </el-row>
+            </div>
+          </el-card>
+        </el-col>
+
+        <!-- 销售人员业绩 -->
+        <el-col :xs="24" :lg="8">
+          <el-card class="chart-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <el-icon><Trophy /></el-icon>
+                <span>销售人员业绩排行</span>
+                <el-tooltip content="按成交金额统计销售人员业绩">
+                  <el-icon><InfoFilled /></el-icon>
+                </el-tooltip>
+              </div>
+            </template>
+            <div class="chart-container" v-loading="loading">
+              <div ref="salesPerformanceChart" class="chart"></div>
+            </div>
+            <div class="performance-summary" v-if="salesPerformanceData.summary">
+              <el-row :gutter="10">
+                <el-col :span="12">
+                  <div class="summary-item">
+                    <div class="summary-label">销售人数</div>
+                    <div class="summary-value">{{ salesPerformanceData.summary.total_sales }}</div>
+                  </div>
+                </el-col>
+                <el-col :span="12">
+                  <div class="summary-item">
+                    <div class="summary-label">人均业绩</div>
+                    <div class="summary-value">¥{{ formatAmount(salesPerformanceData.summary.avg_per_person) }}</div>
+                  </div>
+                </el-col>
+              </el-row>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </div>
+
+    <!-- 原有图表区域 -->
     <div class="charts-section">
       <el-row :gutter="20">
         <!-- 客户增长趋势 -->
@@ -298,6 +411,86 @@
         </el-table>
       </el-card>
     </div>
+
+    <!-- 新增：客户价值明细表格 -->
+    <div class="tables-section" v-if="customerValueData.distribution">
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <el-icon><UserFilled /></el-icon>
+            <span>高价值客户明细</span>
+            <el-tag type="danger" size="small">Top 10</el-tag>
+          </div>
+        </template>
+        <el-table :data="customerValueData.distribution.high?.customers || []" border stripe style="width: 100%" v-loading="loading">
+          <el-table-column type="index" label="排名" width="60" align="center" />
+          <el-table-column prop="name" label="客户名称" min-width="150" />
+          <el-table-column prop="total_amount" label="交易总额" align="right" sortable>
+            <template #default="scope">
+              <span class="amount-text">¥{{ formatNumber(scope.row.total_amount) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="deal_count" label="交易次数" align="center" sortable />
+          <el-table-column prop="avg_amount" label="平均客单价" align="right">
+            <template #default="scope">
+              <span>¥{{ formatNumber(scope.row.avg_amount) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="score" label="价值评分" align="center" width="120">
+            <template #default="scope">
+              <el-progress 
+                :percentage="scope.row.score" 
+                :color="getValueScoreColor(scope.row.score)"
+                :stroke-width="6"
+              />
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+    </div>
+
+    <!-- 新增：销售人员业绩明细表格 -->
+    <div class="tables-section" v-if="salesPerformanceData.by_person">
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <el-icon><Trophy /></el-icon>
+            <span>销售人员业绩明细</span>
+          </div>
+        </template>
+        <el-table :data="salesPerformanceData.by_person" border stripe style="width: 100%" v-loading="loading">
+          <el-table-column type="index" label="排名" width="60" align="center">
+            <template #default="scope">
+              <el-tag v-if="scope.$index === 0" type="danger" size="small">冠军</el-tag>
+              <el-tag v-else-if="scope.$index === 1" type="warning" size="small">亚军</el-tag>
+              <el-tag v-else-if="scope.$index === 2" type="success" size="small">季军</el-tag>
+              <span v-else>{{ scope.$index + 1 }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="name" label="销售人员" min-width="120" />
+          <el-table-column prop="deal_count" label="交易数量" align="center" sortable />
+          <el-table-column prop="total_amount" label="交易总额" align="right" sortable>
+            <template #default="scope">
+              <span class="amount-text">¥{{ formatNumber(scope.row.total_amount) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="closed_amount" label="成交金额" align="right" sortable>
+            <template #default="scope">
+              <span>¥{{ formatNumber(scope.row.closed_amount) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="conversion_rate" label="成交率" align="center" sortable width="120">
+            <template #default="scope">
+              <el-progress 
+                :percentage="scope.row.conversion_rate" 
+                :color="getProgressColor(scope.row.conversion_rate)"
+                :stroke-width="6"
+              />
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+    </div>
   </div>
 </template>
 
@@ -308,7 +501,8 @@ import * as echarts from 'echarts'
 import { 
   DataAnalysis, User, Money, Document, TrendCharts, 
   ArrowUp, ArrowDown, Refresh, InfoFilled, PieChart, 
-  OfficeBuilding, List, Download, Calendar, Grid
+  OfficeBuilding, List, Download, Calendar, Grid,
+  Filter, Medal, Trophy, UserFilled
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -377,6 +571,11 @@ const kpiData = ref({
   conversionTrend: 0
 })
 
+// 新增：高级分析数据
+const salesFunnelData = ref({ stages: [], summary: {} })
+const customerValueData = ref({ distribution: {}, thresholds: {} })
+const salesPerformanceData = ref({ by_person: [], by_industry: [], summary: {}, ranking: {} })
+
 // 详细数据（月统计）
 const detailData = ref([])
 
@@ -393,15 +592,12 @@ const currentTimeDisplay = computed(() => {
   if (timeRange.value === 'custom' && dateRange.value && dateRange.value.length === 2) {
     return `${dateRange.value[0]} 至 ${dateRange.value[1]}`
   } else if (timeRange.value === 'month') {
-    // 本月第一天
     return `${year}-${month}-01`
   } else if (timeRange.value === 'quarter') {
-    // 本季度第一个月
     const currentMonth = now.getMonth() + 1
     const quarterStartMonth = Math.floor((currentMonth - 1) / 3) * 3 + 1
     return `${year}-${String(quarterStartMonth).padStart(2, '0')}`
   } else if (timeRange.value === 'year') {
-    // 本年第一个月
     return `${year}-01`
   }
   return ''
@@ -413,11 +609,15 @@ const amountChart = ref(null)
 const customerStatusChart = ref(null)
 const dealStatusChart = ref(null)
 const industryChart = ref(null)
+const salesFunnelChart = ref(null)
+const customerValueChart = ref(null)
+const salesPerformanceChart = ref(null)
 
 let charts = {}
 
 // 格式化金额
 const formatAmount = (amount) => {
+  if (!amount) return '0'
   if (amount >= 10000) {
     return (amount / 10000).toFixed(1) + '万'
   }
@@ -426,11 +626,13 @@ const formatAmount = (amount) => {
 
 // 格式化数字（金额用，保留2位小数）
 const formatNumber = (num) => {
+  if (!num) return '0.00'
   return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 // 格式化整数（客户数、交易数等用）
 const formatInteger = (num) => {
+  if (!num) return '0'
   return Math.round(num).toLocaleString('zh-CN')
 }
 
@@ -440,6 +642,13 @@ const getProgressColor = (percentage) => {
   if (percentage >= 60) return '#e6a23c'
   if (percentage >= 40) return '#409eff'
   return '#f56c6c'
+}
+
+// 获取价值评分颜色
+const getValueScoreColor = (score) => {
+  if (score >= 80) return '#f56c6c'
+  if (score >= 50) return '#e6a23c'
+  return '#67c23a'
 }
 
 // 初始化客户增长趋势图
@@ -717,6 +926,198 @@ const initIndustryChart = (data) => {
   chart.setOption(option)
 }
 
+// 新增：初始化销售漏斗图
+const initSalesFunnelChart = (data) => {
+  if (!salesFunnelChart.value || !data.stages) return
+  
+  const chart = echarts.init(salesFunnelChart.value)
+  charts.salesFunnel = chart
+  
+  const option = {
+    tooltip: {
+      trigger: 'item',
+      formatter: function(params) {
+        return params.name + '<br/>' +
+               '客户数: ' + params.value + '<br/>' +
+               '转化率: ' + params.data.conversion_rate + '%'
+      }
+    },
+    series: [{
+      name: '销售漏斗',
+      type: 'funnel',
+      left: '10%',
+      top: 10,
+      bottom: 10,
+      width: '80%',
+      min: 0,
+      max: data.stages[0]?.count || 100,
+      minSize: '0%',
+      maxSize: '100%',
+      sort: 'descending',
+      gap: 2,
+      label: {
+        show: true,
+        position: 'inside',
+        formatter: '{b}\n{c}人\n({d}%)'
+      },
+      labelLine: {
+        length: 10,
+        lineStyle: {
+          width: 1,
+          type: 'solid'
+        }
+      },
+      itemStyle: {
+        borderColor: '#fff',
+        borderWidth: 1
+      },
+      emphasis: {
+        label: {
+          fontSize: 14
+        }
+      },
+      data: data.stages.map((stage, index) => ({
+        value: stage.count,
+        name: stage.name,
+        conversion_rate: stage.conversion_rate,
+        itemStyle: {
+          color: ['#5470c6', '#91cc75', '#fac858', '#ee6666'][index % 4]
+        }
+      }))
+    }]
+  }
+  
+  chart.setOption(option)
+}
+
+// 新增：初始化客户价值分布图
+const initCustomerValueChart = (data) => {
+  if (!customerValueChart.value || !data.distribution) return
+  
+  const chart = echarts.init(customerValueChart.value)
+  charts.customerValue = chart
+  
+  const dist = data.distribution
+  const option = {
+    tooltip: {
+      trigger: 'item',
+      formatter: '{b}: {c}人 ({d}%)<br/>金额: ¥{e}'
+    },
+    legend: {
+      orient: 'horizontal',
+      bottom: '5%'
+    },
+    series: [{
+      name: '客户价值',
+      type: 'pie',
+      radius: ['40%', '60%'],
+      center: ['50%', '45%'],
+      avoidLabelOverlap: false,
+      itemStyle: {
+        borderRadius: 10,
+        borderColor: '#fff',
+        borderWidth: 2
+      },
+      label: {
+        show: true,
+        formatter: '{b}\n{c}人'
+      },
+      emphasis: {
+        label: {
+          show: true,
+          fontSize: 16,
+          fontWeight: 'bold'
+        }
+      },
+      data: [
+        { 
+          value: dist.high?.count || 0, 
+          name: '高价值客户', 
+          e: formatNumber(dist.high?.total_amount || 0),
+          itemStyle: { color: '#f56c6c' }
+        },
+        { 
+          value: dist.medium?.count || 0, 
+          name: '中价值客户', 
+          e: formatNumber(dist.medium?.total_amount || 0),
+          itemStyle: { color: '#e6a23c' }
+        },
+        { 
+          value: dist.low?.count || 0, 
+          name: '低价值客户', 
+          e: formatNumber(dist.low?.total_amount || 0),
+          itemStyle: { color: '#67c23a' }
+        }
+      ]
+    }]
+  }
+  
+  chart.setOption(option)
+}
+
+// 新增：初始化销售人员业绩图
+const initSalesPerformanceChart = (data) => {
+  if (!salesPerformanceChart.value || !data.by_person) return
+  
+  const chart = echarts.init(salesPerformanceChart.value)
+  charts.salesPerformance = chart
+  
+  // 只显示前5名
+  const top5 = data.by_person.slice(0, 5)
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: function(params) {
+        const p = params[0]
+        return p.name + '<br/>' +
+               '交易总额: ¥' + formatNumber(p.value) + '<br/>' +
+               '交易数: ' + p.data.deal_count + '<br/>' +
+               '成交率: ' + p.data.conversion_rate + '%'
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: top5.map(p => p.name),
+      axisLabel: { rotate: 30 }
+    },
+    yAxis: {
+      type: 'value',
+      name: '金额(万元)',
+      axisLabel: {
+        formatter: function(value) {
+          return (value / 10000).toFixed(0)
+        }
+      }
+    },
+    series: [{
+      name: '交易总额',
+      type: 'bar',
+      data: top5.map(p => ({
+        value: p.total_amount,
+        deal_count: p.deal_count,
+        conversion_rate: p.conversion_rate
+      })),
+      itemStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: '#f093fb' },
+          { offset: 0.5, color: '#f5576c' },
+          { offset: 1, color: '#f5576c' }
+        ])
+      }
+    }]
+  }
+  
+  chart.setOption(option)
+}
+
 // 获取统计数据
 const fetchStatsData = async () => {
   loading.value = true
@@ -728,12 +1129,18 @@ const fetchStatsData = async () => {
       params += `&start_date=${dateRange.value[0]}&end_date=${dateRange.value[1]}`
     }
     
-    const [kpiRes, trendRes, monthlyRes, statusRes, industryRes] = await Promise.all([
+    // 同时获取原有统计和新增的高级统计
+    const [kpiRes, trendRes, monthlyRes, statusRes, industryRes, 
+           funnelRes, valueRes, performanceRes] = await Promise.all([
       axios.get(`/api/stats/kpi?${params}`),
       axios.get(`/api/stats/trend?${params}`),
       axios.get('/api/stats/monthly-summary'),
       axios.get('/api/stats/status'),
-      axios.get('/api/stats/industry')
+      axios.get('/api/stats/industry'),
+      // 新增的高级统计API
+      axios.get(`/api/stats/sales-funnel?${params}`),
+      axios.get(`/api/stats/customer-value?${params}`),
+      axios.get(`/api/stats/sales-performance?${params}`)
     ])
     
     // 更新KPI数据
@@ -745,6 +1152,11 @@ const fetchStatsData = async () => {
     // 更新详细数据（月统计）
     detailData.value = monthlyRes.data
     
+    // 更新高级分析数据
+    salesFunnelData.value = funnelRes.data
+    customerValueData.value = valueRes.data
+    salesPerformanceData.value = performanceRes.data
+    
     // 初始化图表
     await nextTick()
     initCustomerChart(trendRes.data)
@@ -752,6 +1164,10 @@ const fetchStatsData = async () => {
     initCustomerStatusChart(statusRes.data.customers)
     initDealStatusChart(statusRes.data.deals)
     initIndustryChart(industryRes.data)
+    // 初始化新增图表
+    initSalesFunnelChart(funnelRes.data)
+    initCustomerValueChart(valueRes.data)
+    initSalesPerformanceChart(performanceRes.data)
     
   } catch (error) {
     console.error('获取统计数据失败:', error)
@@ -1027,6 +1443,11 @@ onUnmounted(() => {
   margin-left: 4px;
 }
 
+/* 高级统计区域 */
+.advanced-stats-section {
+  margin-bottom: 20px;
+}
+
 /* 图表区域 */
 .charts-section {
   margin-bottom: 20px;
@@ -1039,6 +1460,7 @@ onUnmounted(() => {
 .chart-card {
   border-radius: 12px;
   height: 100%;
+  margin-bottom: 20px;
 }
 
 .card-header {
@@ -1061,6 +1483,84 @@ onUnmounted(() => {
 .chart {
   width: 100%;
   height: 100%;
+}
+
+/* 漏斗分析摘要 */
+.funnel-summary {
+  padding: 15px;
+  border-top: 1px solid #ebeef5;
+}
+
+.summary-item {
+  text-align: center;
+  padding: 10px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.summary-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #409eff;
+}
+
+/* 客户价值分析 */
+.value-summary {
+  padding: 15px;
+  border-top: 1px solid #ebeef5;
+}
+
+.value-item {
+  text-align: center;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.value-item.high {
+  background: rgba(245, 108, 108, 0.1);
+}
+
+.value-item.medium {
+  background: rgba(230, 162, 60, 0.1);
+}
+
+.value-item.low {
+  background: rgba(103, 194, 58, 0.1);
+}
+
+.value-label {
+  font-size: 12px;
+  color: #606266;
+  margin-bottom: 4px;
+}
+
+.value-count {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.value-item.high .value-count {
+  color: #f56c6c;
+}
+
+.value-item.medium .value-count {
+  color: #e6a23c;
+}
+
+.value-item.low .value-count {
+  color: #67c23a;
+}
+
+/* 业绩摘要 */
+.performance-summary {
+  padding: 15px;
+  border-top: 1px solid #ebeef5;
 }
 
 /* 表格区域 */
