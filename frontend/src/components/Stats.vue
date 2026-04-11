@@ -420,27 +420,28 @@
             <el-icon><UserFilled /></el-icon>
             <span>高价值客户明细</span>
             <el-tag type="danger" size="small">Top 10</el-tag>
+            <el-tag type="info" size="small" style="margin-left: 8px">综合评分 = 金额分40% + 评分60%</el-tag>
           </div>
         </template>
         <el-table :data="customerValueData.distribution.high?.customers || []" border stripe style="width: 100%" v-loading="loading">
           <el-table-column type="index" label="排名" width="60" align="center" />
-          <el-table-column prop="name" label="客户名称" min-width="150" />
-          <el-table-column prop="total_amount" label="交易总额" align="right" sortable>
+          <el-table-column prop="name" label="客户名称" min-width="120" />
+          <el-table-column prop="value_score" label="星级" align="center" width="100">
+            <template #default="scope">
+              <el-rate v-model="scope.row.value_score" :max="5" disabled />
+            </template>
+          </el-table-column>
+          <el-table-column prop="total_amount" label="交易总额" align="right" sortable width="120">
             <template #default="scope">
               <span class="amount-text">¥{{ formatNumber(scope.row.total_amount) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="deal_count" label="交易次数" align="center" sortable />
-          <el-table-column prop="avg_amount" label="平均客单价" align="right">
-            <template #default="scope">
-              <span>¥{{ formatNumber(scope.row.avg_amount) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="score" label="价值评分" align="center" width="120">
+          <el-table-column prop="deal_count" label="交易次数" align="center" sortable width="90" />
+          <el-table-column prop="composite_score" label="综合评分" align="center" sortable width="120">
             <template #default="scope">
               <el-progress 
-                :percentage="scope.row.score" 
-                :color="getValueScoreColor(scope.row.score)"
+                :percentage="scope.row.composite_score" 
+                :color="getValueScoreColor(scope.row.composite_score)"
                 :stroke-width="6"
               />
             </template>
@@ -502,7 +503,7 @@ import {
   DataAnalysis, User, Money, Document, TrendCharts, 
   ArrowUp, ArrowDown, Refresh, InfoFilled, PieChart, 
   OfficeBuilding, List, Download, Calendar, Grid,
-  Filter, Medal, Trophy, UserFilled
+  Filter, Medal, Trophy, UserFilled, Setting
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -998,10 +999,15 @@ const initCustomerValueChart = (data) => {
   charts.customerValue = chart
   
   const dist = data.distribution
+  const thresholds = data.thresholds || {}
   const option = {
     tooltip: {
       trigger: 'item',
-      formatter: '{b}: {c}人 ({d}%)<br/>金额: ¥{e}'
+      formatter: function(params) {
+        let tip = params.name + ': ' + params.value + '人 (' + params.percent + '%)<br/>'
+        tip += '交易金额: ¥' + params.data.amount
+        return tip
+      }
     },
     legend: {
       orient: 'horizontal',
@@ -1033,19 +1039,19 @@ const initCustomerValueChart = (data) => {
         { 
           value: dist.high?.count || 0, 
           name: '高价值客户', 
-          e: formatNumber(dist.high?.total_amount || 0),
+          amount: formatNumber(dist.high?.total_amount || 0),
           itemStyle: { color: '#f56c6c' }
         },
         { 
           value: dist.medium?.count || 0, 
           name: '中价值客户', 
-          e: formatNumber(dist.medium?.total_amount || 0),
+          amount: formatNumber(dist.medium?.total_amount || 0),
           itemStyle: { color: '#e6a23c' }
         },
         { 
           value: dist.low?.count || 0, 
           name: '低价值客户', 
-          e: formatNumber(dist.low?.total_amount || 0),
+          amount: formatNumber(dist.low?.total_amount || 0),
           itemStyle: { color: '#67c23a' }
         }
       ]
@@ -1122,6 +1128,13 @@ const initSalesPerformanceChart = (data) => {
 const fetchStatsData = async () => {
   loading.value = true
   try {
+    // 确保 timeRange 是有效值
+    const validRanges = ['month', 'quarter', 'year', 'custom', 'all']
+    const currentRange = validRanges.includes(timeRange.value) ? timeRange.value : 'month'
+    if (timeRange.value !== currentRange) {
+      timeRange.value = currentRange
+    }
+    
     let params = `range=${timeRange.value}`
     
     // 如果是自定义时间范围，添加日期参数
