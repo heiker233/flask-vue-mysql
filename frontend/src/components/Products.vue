@@ -6,7 +6,7 @@
         <h2>产品库管理</h2>
         <el-tag type="info" class="count-tag">共 {{ total }} 个产品</el-tag>
       </div>
-      <el-button type="primary" @click="showAddDialog = true" :icon="Plus">
+      <el-button type="primary" @click="openAddDialog" :icon="Plus">
         添加产品
       </el-button>
     </div>
@@ -53,6 +53,17 @@
           </template>
         </el-table-column>
         <el-table-column prop="unit" label="单位" width="80" align="center" />
+        <el-table-column prop="is_active" label="状态" width="100" align="center">
+          <template #default="scope">
+            <el-switch
+              v-model="scope.row.is_active"
+              @change="toggleStatus(scope.row)"
+              active-text="在售"
+              inactive-text="停售"
+              inline-prompt
+            />
+          </template>
+        </el-table-column>
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
         <el-table-column prop="created_at" label="创建时间" width="160" align="center">
           <template #default="scope">
@@ -61,7 +72,7 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
-            <el-button type="primary" link :icon="Edit" @click="editProduct(scope.row)">
+            <el-button type="primary" link :icon="Edit" @click="openEditDialog(scope.row)">
               编辑
             </el-button>
             <el-button type="danger" link :icon="Delete" @click="deleteProduct(scope.row.id)">
@@ -84,111 +95,7 @@
       </div>
     </el-card>
 
-    <el-dialog
-      v-model="showAddDialog"
-      title="添加产品"
-      width="500px"
-      destroy-on-close
-    >
-      <el-form
-        ref="addFormRef"
-        :model="newProduct"
-        :rules="productRules"
-        label-width="80px"
-        status-icon
-      >
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="newProduct.name" placeholder="请输入产品名称" />
-        </el-form-item>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="单价" prop="price">
-              <el-input-number
-                v-model="newProduct.price"
-                :min="0"
-                :precision="2"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="单位" prop="unit">
-              <el-select v-model="newProduct.unit" placeholder="请选择单位" style="width: 100%">
-                <el-option label="件" value="件" />
-                <el-option label="个" value="个" />
-                <el-option label="套" value="套" />
-                <el-option label="台" value="台" />
-                <el-option label="箱" value="箱" />
-                <el-option label="kg" value="kg" />
-                <el-option label="吨" value="吨" />
-                <el-option label="米" value="米" />
-                <el-option label="次" value="次" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="描述" prop="description">
-          <el-input v-model="newProduct.description" type="textarea" :rows="3" placeholder="请输入产品描述" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveProduct" :loading="saving">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog
-      v-model="showEditDialog"
-      title="编辑产品"
-      width="500px"
-      destroy-on-close
-    >
-      <el-form
-        ref="editFormRef"
-        :model="editProductForm"
-        :rules="productRules"
-        label-width="80px"
-        status-icon
-      >
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="editProductForm.name" placeholder="请输入产品名称" />
-        </el-form-item>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="单价" prop="price">
-              <el-input-number
-                v-model="editProductForm.price"
-                :min="0"
-                :precision="2"
-                style="width: 100%"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="单位" prop="unit">
-              <el-select v-model="editProductForm.unit" placeholder="请选择单位" style="width: 100%">
-                <el-option label="件" value="件" />
-                <el-option label="个" value="个" />
-                <el-option label="套" value="套" />
-                <el-option label="台" value="台" />
-                <el-option label="箱" value="箱" />
-                <el-option label="kg" value="kg" />
-                <el-option label="吨" value="吨" />
-                <el-option label="米" value="米" />
-                <el-option label="次" value="次" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="描述" prop="description">
-          <el-input v-model="editProductForm.description" type="textarea" :rows="3" placeholder="请输入产品描述" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showEditDialog = false">取消</el-button>
-        <el-button type="primary" @click="updateProduct" :loading="updating">确定</el-button>
-      </template>
-    </el-dialog>
+    <ProductDialogs ref="dialogsRef" @refresh="fetchProducts" />
   </div>
 </template>
 
@@ -197,64 +104,16 @@ import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Plus, Search, RefreshRight, Edit, Delete } from '@element-plus/icons-vue'
+import { formatDate, formatNumber } from '../utils/helpers'
+import ProductDialogs from './products/ProductDialogs.vue'
 
 const products = ref([])
 const loading = ref(false)
-const saving = ref(false)
-const updating = ref(false)
-const showAddDialog = ref(false)
-const showEditDialog = ref(false)
-const addFormRef = ref(null)
-const editFormRef = ref(null)
+const dialogsRef = ref(null)
 
 const searchQuery = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
-
-const newProduct = ref({
-  name: '',
-  price: 0,
-  unit: '件',
-  description: ''
-})
-
-const editProductForm = ref({
-  id: null,
-  name: '',
-  price: 0,
-  unit: '件',
-  description: ''
-})
-
-const productRules = {
-  name: [
-    { required: true, message: '请输入产品名称', trigger: 'blur' },
-    { min: 2, max: 100, message: '名称长度在2到100个字符', trigger: 'blur' }
-  ],
-  price: [
-    { required: true, message: '请输入单价', trigger: 'blur' },
-    { type: 'number', min: 0, message: '单价不能为负数', trigger: 'blur' }
-  ],
-  unit: [
-    { required: true, message: '请选择单位', trigger: 'change' }
-  ]
-}
-
-const formatNumber = (num) => {
-  return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
 
 const filteredProducts = computed(() => {
   let result = products.value
@@ -290,6 +149,19 @@ const fetchProducts = async () => {
   }
 }
 
+const toggleStatus = async (product) => {
+  try {
+    await axios.put(`/api/products/${product.id}`, {
+      is_active: product.is_active
+    })
+    ElMessage.success(product.is_active ? '产品已恢复销售' : '产品已停售隐藏')
+  } catch (error) {
+    console.error('切换状态失败:', error)
+    product.is_active = !product.is_active
+    ElMessage.error('切换状态失败')
+  }
+}
+
 const handleSearch = () => {
   currentPage.value = 1
 }
@@ -308,58 +180,12 @@ const handleCurrentChange = (val) => {
   currentPage.value = val
 }
 
-const saveProduct = async () => {
-  if (!addFormRef.value) return
-
-  await addFormRef.value.validate(async (valid) => {
-    if (valid) {
-      saving.value = true
-      try {
-        await axios.post('/api/products', newProduct.value)
-        ElMessage.success('产品添加成功')
-        fetchProducts()
-        showAddDialog.value = false
-        resetForm()
-      } catch (error) {
-        console.error('保存产品失败:', error)
-        ElMessage.error(error.response?.data?.message || '保存产品失败')
-      } finally {
-        saving.value = false
-      }
-    }
-  })
+const openAddDialog = () => {
+  dialogsRef.value?.openAdd()
 }
 
-const editProduct = (product) => {
-  editProductForm.value = {
-    id: product.id,
-    name: product.name,
-    price: product.price,
-    unit: product.unit,
-    description: product.description || ''
-  }
-  showEditDialog.value = true
-}
-
-const updateProduct = async () => {
-  if (!editFormRef.value) return
-
-  await editFormRef.value.validate(async (valid) => {
-    if (valid) {
-      updating.value = true
-      try {
-        await axios.put(`/api/products/${editProductForm.value.id}`, editProductForm.value)
-        ElMessage.success('产品更新成功')
-        fetchProducts()
-        showEditDialog.value = false
-      } catch (error) {
-        console.error('更新产品失败:', error)
-        ElMessage.error(error.response?.data?.message || '更新产品失败')
-      } finally {
-        updating.value = false
-      }
-    }
-  })
+const openEditDialog = (product) => {
+  dialogsRef.value?.openEdit(product)
 }
 
 const deleteProduct = async (id) => {
@@ -381,87 +207,23 @@ const deleteProduct = async (id) => {
   }
 }
 
-const resetForm = () => {
-  newProduct.value = {
-    name: '',
-    price: 0,
-    unit: '件',
-    description: ''
-  }
-  addFormRef.value?.resetFields()
-}
-
 onMounted(() => {
   fetchProducts()
 })
 </script>
 
 <style scoped>
-.products-container {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-icon {
-  font-size: 28px;
-  color: #409eff;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.count-tag {
-  font-size: 14px;
-}
-
-.search-card {
-  margin-bottom: 20px;
-}
-
-.search-input {
-  width: 300px;
-}
-
-.table-card {
-  margin-bottom: 20px;
-}
-
-.product-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.product-icon {
-  color: #409eff;
-  font-size: 18px;
-}
-
-.price-text {
-  font-weight: 600;
-  color: #f56c6c;
-}
-
-.pagination-container {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #ebeef5;
-}
+.products-container { padding: 20px; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-icon { font-size: 28px; color: #409eff; }
+.page-header h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.count-tag { font-size: 14px; }
+.search-card { margin-bottom: 20px; }
+.search-input { width: 300px; }
+.table-card { margin-bottom: 20px; }
+.product-name { display: flex; align-items: center; gap: 8px; }
+.product-icon { color: #409eff; font-size: 18px; }
+.price-text { font-weight: 600; color: #f56c6c; }
+.pagination-container { display: flex; justify-content: flex-end; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ebeef5; }
 </style>

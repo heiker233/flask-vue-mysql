@@ -1,0 +1,16 @@
+﻿refactor: 优化前后端系统架构与全量接口分页支持
+
+[后端]
+- 规范化包结构：移除 sys.path.append 强行注入，为 services 目录添加 __init__.py 以符合 Python 标准包规范。
+- 梳理配置初始化：重构 update_db.py 与 create_database.py，移除所有硬编码密码并支持动态加载 DB_PORT 等环境变量。
+- 增强安全性：为 config.py 中的数据库密码执行 URL 转码，解决带有特殊字符密码时 SQLAlchemy 无法连接的解析错误。
+- 查询性能优化：使用 func.extract 与 group_by 原生 SQL 聚类重写了 stats_service 统计模块，修复 N+1 查询性能瓶颈。
+- 模块翻新：全局核心业务 API（客户、业务等）实现标准的游标分页格式兼容。
+
+[前端]
+- 组件结构模块化：将 FollowUps、Products、Users 等超大体积 God Component 拆分为 Filter、Table、Dialog 等细粒度单文件组件。
+- 抽取可复用逻辑：提取状态维护至 composables (如 useFollowUps)，并将常用格式化计算抽离至 utils/helpers.js。
+- 全局解耦：剥离 App.vue 中的长轮询机制，抽取为独立的 MessageCenter 功能组件。
+
+[文档]
+- 重写 README.md，更新实际目录层级，补充开源协议、缺失的环境变量清单及开发向导。

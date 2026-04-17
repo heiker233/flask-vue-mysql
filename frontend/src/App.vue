@@ -50,30 +50,8 @@
         <el-header class="header">
           <span class="header-title">客户管理系统</span>
           <div class="header-user">
-            <!-- 消息中心 -->
-            <el-popover placement="bottom" :width="300" trigger="click" @show="fetchMessages">
-              <template #reference>
-                <el-badge :value="unreadCount" :max="99" class="msg-badge" :hidden="unreadCount === 0">
-                  <el-icon class="msg-icon"><Bell /></el-icon>
-                </el-badge>
-              </template>
-              <div class="msg-container">
-                <div class="msg-header">
-                  <span>消息通知</span>
-                  <el-button type="text" size="small" @click="readAllMessages" v-if="unreadCount > 0">全部已读</el-button>
-                </div>
-                <div class="msg-list" v-loading="loadingMessages">
-                  <div v-for="msg in messages" :key="msg.id" class="msg-item" :class="{ 'unread': !msg.is_read }" @click="readMessage(msg)">
-                    <div class="msg-title">
-                      <el-tag size="small" :type="getMsgTypeTag(msg.msg_type)">{{ msg.title }}</el-tag>
-                      <span class="msg-time">{{ formatTime(msg.created_at) }}</span>
-                    </div>
-                    <div class="msg-content">{{ msg.content }}</div>
-                  </div>
-                  <el-empty v-if="messages.length === 0" description="暂无消息" :image-size="60" />
-                </div>
-              </div>
-            </el-popover>
+            <!-- 消息中心组件 -->
+            <MessageCenter :userId="currentUser.id" />
             
             <el-text>欢迎, {{ currentUser.username }}</el-text>
             <el-button type="text" @click="logout">退出登录</el-button>
@@ -89,7 +67,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { User, Message, Money, DataBoard, Setting, HomeFilled, Upload, Bell, Box } from '@element-plus/icons-vue'
+import { User, Message, Money, DataBoard, Setting, HomeFilled, Upload, Box } from '@element-plus/icons-vue'
 import Login from './components/Login.vue'
 import Home from './components/Home.vue'
 import Customers from './components/Customers.vue'
@@ -99,6 +77,7 @@ import Stats from './components/Stats.vue'
 import Users from './components/Users.vue'
 import DataImport from './components/DataImport.vue'
 import Products from './components/Products.vue'
+import MessageCenter from './components/common/MessageCenter.vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
@@ -112,54 +91,6 @@ const currentUser = ref({
 
 const activeMenu = ref('home')
 
-// 消息中心
-const messages = ref([])
-const loadingMessages = ref(false)
-const unreadCount = computed(() => messages.value.filter(m => !m.is_read).length)
-let messageTimer = null
-
-const fetchMessages = async () => {
-  if (!isLoggedIn.value || !currentUser.value.id) return
-  loadingMessages.value = true
-  try {
-    const res = await axios.get('/api/messages', { params: { user_id: currentUser.value.id } })
-    messages.value = res.data
-  } catch (error) {
-    console.error('获取消息失败', error)
-  } finally {
-    loadingMessages.value = false
-  }
-}
-
-const readMessage = async (msg) => {
-  if (msg.is_read) return
-  try {
-    await axios.put(`/api/messages/${msg.id}/read`)
-    msg.is_read = true
-  } catch (error) {
-    console.error('标记已读失败', error)
-  }
-}
-
-const readAllMessages = async () => {
-  try {
-    await axios.put('/api/messages/read_all', { user_id: currentUser.value.id })
-    messages.value.forEach(m => m.is_read = true)
-  } catch (error) {
-    console.error('标记全部已读失败', error)
-  }
-}
-
-const getMsgTypeTag = (type) => {
-  const map = { 'deal': 'success', 'todo': 'danger', 'system': 'info' }
-  return map[type] || 'info'
-}
-
-const formatTime = (timeStr) => {
-  const date = new Date(timeStr)
-  return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
 // 判断当前用户是否为管理员
 const isAdmin = computed(() => {
   return currentUser.value.role === 'admin'
@@ -169,7 +100,6 @@ const isAdmin = computed(() => {
 const currentComponent = computed(() => {
   // 非管理员不能访问权限管理
   if (activeMenu.value === 'users' && !isAdmin.value) {
-    activeMenu.value = 'home'
     ElMessage.warning('您没有权限访问此页面')
     return Home
   }
@@ -210,9 +140,6 @@ const handleLoginSuccess = (user) => {
   
   // 保存到本地存储，刷新页面后仍保持登录状态
   localStorage.setItem('user', JSON.stringify(user))
-  
-  fetchMessages()
-  messageTimer = setInterval(fetchMessages, 60000)
 }
 
 const logout = () => {
@@ -228,8 +155,14 @@ const logout = () => {
   localStorage.removeItem('token')
   // 清除axios默认请求头
   delete axios.defaults.headers.common['Authorization']
-  if (messageTimer) clearInterval(messageTimer)
-  ElMessage.success('已退出登录')
+}
+
+// 强制退出（用于 401 拦截）
+const handleForceLogout = () => {
+  if (isLoggedIn.value) {
+    logout()
+    ElMessage.error('登录已过期或凭据无效，请重新登录')
+  }
 }
 
 // 初始化时检查本地存储是否有用户信息和token
@@ -244,9 +177,6 @@ const initUser = () => {
       currentUser.value = user
       // 恢复axios请求头
       axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`
-      
-      fetchMessages()
-      messageTimer = setInterval(fetchMessages, 60000)
     } catch (e) {
       console.error('Failed to parse user from localStorage:', e)
       localStorage.removeItem('user')
@@ -255,8 +185,13 @@ const initUser = () => {
   }
 }
 
+onMounted(() => {
+  // 监听拦截器发出的未授权事件
+  window.addEventListener('unauthorized', handleForceLogout)
+})
+
 onUnmounted(() => {
-  if (messageTimer) clearInterval(messageTimer)
+  window.removeEventListener('unauthorized', handleForceLogout)
 })
 
 // 初始化用户信息
@@ -304,66 +239,5 @@ initUser()
 
 .main {
   padding: 20px;
-}
-
-.msg-badge {
-  margin-right: 15px;
-  cursor: pointer;
-}
-
-.msg-icon {
-  font-size: 20px;
-  color: white;
-}
-
-.msg-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #ebeef5;
-  padding-bottom: 10px;
-  margin-bottom: 10px;
-  font-weight: bold;
-}
-
-.msg-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.msg-item {
-  padding: 10px;
-  border-bottom: 1px solid #f0f2f5;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.msg-item:hover {
-  background-color: #f5f7fa;
-}
-
-.msg-item.unread {
-  background-color: #fdf6ec;
-}
-
-.msg-item.unread:hover {
-  background-color: #faecd8;
-}
-
-.msg-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 5px;
-}
-
-.msg-time {
-  font-size: 12px;
-  color: #909399;
-}
-
-.msg-content {
-  font-size: 13px;
-  color: #606266;
 }
 </style>

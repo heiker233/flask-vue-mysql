@@ -1,15 +1,20 @@
-"""
+﻿"""
 数据库表结构更新脚本
 添加缺失的字段到 deals 表
 """
 import pymysql
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 数据库配置
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': 'daige520',
-    'database': 'customer_management',
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'port': int(os.environ.get('DB_PORT', 3306)),
+    'user': os.environ.get('DB_USER', 'root'),
+    'password': os.environ.get('DB_PASSWORD', ''),
+    'database': os.environ.get('DB_NAME', 'customer_management'),
     'charset': 'utf8mb4'
 }
 

@@ -71,6 +71,7 @@ class FollowUp(db.Model):
     is_conversion = db.Column(db.Boolean, default=False)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # 产品库表
 class Product(db.Model):
@@ -82,6 +83,7 @@ class Product(db.Model):
     description = db.Column(db.Text)
     unit = db.Column(db.String(20), default='件')
     is_active = db.Column(db.Boolean, default=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

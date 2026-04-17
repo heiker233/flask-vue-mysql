@@ -36,7 +36,14 @@ axios.interceptors.response.use(
   (error) => {
     // 处理401未授权等错误
     if (error.response?.status === 401) {
-      console.log('用户未登录，需要重新登录')
+      console.log('用户未登录或登录过期，需要重新登录')
+      // 清除本地 token 缓存，防止持续发送无效请求
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      delete axios.defaults.headers.common['Authorization']
+      
+      // 触发全局事件，让 App.vue 捕获并强制退出到登录页
+      window.dispatchEvent(new CustomEvent('unauthorized'))
     }
     return Promise.reject(error)
   }

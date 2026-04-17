@@ -1,4 +1,4 @@
-"""
+﻿"""
 客户管理系统后端主应用
 使用模块化结构，支持环境变量配置
 """
@@ -52,11 +52,12 @@ def create_app(config_name=None):
         # 添加管理员用户（如果不存在）
         admin = User.query.filter_by(username='admin').first()
         if not admin:
-            hashed_password = generate_password_hash('123456')
+            admin_password = os.environ.get('ADMIN_PASSWORD', '123456')
+            hashed_password = generate_password_hash(admin_password)
             admin = User(username='admin', password=hashed_password, role='admin')
             db.session.add(admin)
             db.session.commit()
-            print('管理员用户已创建: admin / 123456')
+            print(f'管理员用户已创建: admin / {admin_password}')
     
     return app
 

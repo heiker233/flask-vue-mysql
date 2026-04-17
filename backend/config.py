@@ -18,7 +18,9 @@ class Config:
     DB_PORT = os.environ.get('DB_PORT', '3306')
     DB_NAME = os.environ.get('DB_NAME', 'customer_management')
     
-    SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+    from urllib.parse import quote_plus
+    _encoded_pw = quote_plus(DB_PASSWORD) if DB_PASSWORD else ''
+    SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{DB_USER}:{_encoded_pw}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # JWT 配置
@@ -51,7 +53,9 @@ class TestingConfig(Config):
     TESTING = True
     # 测试数据库
     DB_NAME = os.environ.get('TEST_DB_NAME', 'customer_management_test')
-    SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{Config.DB_USER}:{Config.DB_PASSWORD}@{Config.DB_HOST}:{Config.DB_PORT}/{DB_NAME}'
+    from urllib.parse import quote_plus
+    _encoded_pw = quote_plus(Config.DB_PASSWORD) if Config.DB_PASSWORD else ''
+    SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{Config.DB_USER}:{_encoded_pw}@{Config.DB_HOST}:{Config.DB_PORT}/{DB_NAME}'
 
 
 # 配置映射

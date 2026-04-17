@@ -7,6 +7,9 @@ __pycache__/
 env/
 venv/
 ENV/
+.venv/
+flaskvue-env/
+temp-env/
 build/
 develop-eggs/
 dist/
@@ -23,14 +26,28 @@ wheels/
 .installed.cfg
 *.egg
 
+# Testing & Coverage
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Databases
+*.sqlite3
+*.db
+
 # Flask
 instance/
 .webassets-cache
 
 # Node / Frontend
-frontend/node_modules/
+node_modules/
 frontend/dist/
 frontend/.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # IDE
 .vscode/
@@ -45,4 +62,5 @@ Thumbs.db
 
 # Environment variables
 .env
+.env.*.local
 .env.local

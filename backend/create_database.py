@@ -1,10 +1,15 @@
-import pymysql
+﻿import pymysql
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 数据库连接参数
 config = {
-    'user': 'root',
-    'password': 'daige520',
-    'host': 'localhost',
+    'user': os.environ.get('DB_USER', 'root'),
+    'password': os.environ.get('DB_PASSWORD', ''),
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'port': int(os.environ.get('DB_PORT', 3306)),
     'charset': 'utf8mb4'
 }
 
