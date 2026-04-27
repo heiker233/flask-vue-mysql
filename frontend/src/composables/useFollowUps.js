@@ -16,12 +16,21 @@ export function useFollowUps() {
   const currentPage = ref(1)
   const pageSize = ref(10)
 
+  const normalizeFollowUp = (followUp) => {
+    const followType = followUp.follow_up_method || followUp.follow_type || ''
+    return {
+      ...followUp,
+      follow_type: followType,
+      follow_up_method: followType
+    }
+  }
+
   // 获取数据
   const fetchFollowUps = async () => {
     loading.value = true
     try {
       const response = await axios.get('/api/follow-ups')
-      followUps.value = response.data
+      followUps.value = response.data.map(normalizeFollowUp)
     } catch (error) {
       console.error('获取跟进记录失败:', error)
       ElMessage.error('获取跟进记录列表失败')

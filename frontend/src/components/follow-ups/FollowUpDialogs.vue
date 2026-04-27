@@ -42,8 +42,8 @@
             show-word-limit
           />
         </el-form-item>
-        <el-form-item label="跟进方式" prop="follow_type">
-          <el-select v-model="newFollowUp.follow_type" placeholder="请选择跟进方式" style="width: 100%">
+        <el-form-item label="跟进方式" prop="follow_up_method">
+          <el-select v-model="newFollowUp.follow_up_method" placeholder="请选择跟进方式" style="width: 100%">
             <el-option label="电话" value="电话" />
             <el-option label="邮件" value="邮件" />
             <el-option label="面谈" value="面谈" />
@@ -70,7 +70,7 @@
             <el-option
               v-for="deal in currentCustomerDeals"
               :key="deal.id"
-              :label="deal.product ? deal.product + ' (¥' + deal.amount + ')' : '交易 ¥' + deal.amount"
+              :label="deal.product_name ? deal.product_name + ' (¥' + deal.amount + ')' : '交易 ¥' + deal.amount"
               :value="deal.id"
             />
           </el-select>
@@ -125,8 +125,8 @@
             show-word-limit
           />
         </el-form-item>
-        <el-form-item label="跟进方式" prop="follow_type">
-          <el-select v-model="editFollowUpForm.follow_type" placeholder="请选择跟进方式" style="width: 100%">
+        <el-form-item label="跟进方式" prop="follow_up_method">
+          <el-select v-model="editFollowUpForm.follow_up_method" placeholder="请选择跟进方式" style="width: 100%">
             <el-option label="电话" value="电话" />
             <el-option label="邮件" value="邮件" />
             <el-option label="面谈" value="面谈" />
@@ -153,7 +153,7 @@
             <el-option
               v-for="deal in currentCustomerDeals"
               :key="deal.id"
-              :label="deal.product ? deal.product + ' (¥' + deal.amount + ')' : '交易 ¥' + deal.amount"
+              :label="deal.product_name ? deal.product_name + ' (¥' + deal.amount + ')' : '交易 ¥' + deal.amount"
               :value="deal.id"
             />
           </el-select>
@@ -196,7 +196,7 @@ const currentCustomerDeals = ref([])
 const newFollowUp = ref({
   customer_id: '',
   content: '',
-  follow_type: '',
+  follow_up_method: '',
   next_follow_date: '',
   deal_id: null,
   is_conversion: false
@@ -206,7 +206,7 @@ const editFollowUpForm = ref({
   id: null,
   customer_id: '',
   content: '',
-  follow_type: '',
+  follow_up_method: '',
   next_follow_date: '',
   deal_id: null,
   is_conversion: false
@@ -219,7 +219,7 @@ const followUpRules = {
     { required: true, message: '请输入跟进内容', trigger: 'blur' },
     { min: 5, max: 500, message: '内容长度在 5 到 500 个字符', trigger: 'blur' }
   ],
-  follow_type: [{ required: true, message: '请选择跟进方式', trigger: 'change' }]
+  follow_up_method: [{ required: true, message: '请选择跟进方式', trigger: 'change' }]
 }
 
 // 监听客户ID变化以获取该客户的交易
@@ -306,7 +306,7 @@ const openEdit = async (followUp) => {
     id: followUp.id,
     customer_id: followUp.customer_id,
     content: followUp.content,
-    follow_type: followUp.follow_type,
+    follow_up_method: followUp.follow_up_method || followUp.follow_type || '',
     next_follow_date: followUp.next_follow_date,
     deal_id: followUp.deal_id,
     is_conversion: followUp.is_conversion
@@ -332,7 +332,7 @@ const resetAddForm = () => {
   newFollowUp.value = {
     customer_id: '',
     content: '',
-    follow_type: '',
+    follow_up_method: '',
     next_follow_date: '',
     deal_id: null,
     is_conversion: false
@@ -346,7 +346,7 @@ const resetEditForm = () => {
     id: null,
     customer_id: '',
     content: '',
-    follow_type: '',
+    follow_up_method: '',
     next_follow_date: '',
     deal_id: null,
     is_conversion: false

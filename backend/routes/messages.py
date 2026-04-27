@@ -34,14 +34,14 @@ def add_message():
 @token_required
 def mark_message_read(id):
     """标记消息为已读"""
-    result, status = MessageService.mark_message_read(id)
+    result, status = MessageService.mark_message_read(id, request.current_user.id)
     return jsonify(result), status
 
 @messages_bp.route('/messages/<int:id>', methods=['DELETE'])
 @token_required
 def delete_message(id):
     """删除消息"""
-    result, status = MessageService.delete_message(id)
+    result, status = MessageService.delete_message(id, request.current_user.id)
     return jsonify(result), status
 
 @messages_bp.route('/messages/unread-count', methods=['GET'])

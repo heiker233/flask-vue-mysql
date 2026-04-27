@@ -6,7 +6,7 @@
         <h2>产品库管理</h2>
         <el-tag type="info" class="count-tag">共 {{ total }} 个产品</el-tag>
       </div>
-      <el-button type="primary" @click="openAddDialog" :icon="Plus">
+      <el-button v-if="isAdmin" type="primary" @click="openAddDialog" :icon="Plus">
         添加产品
       </el-button>
     </div>
@@ -56,12 +56,16 @@
         <el-table-column prop="is_active" label="状态" width="100" align="center">
           <template #default="scope">
             <el-switch
+              v-if="isAdmin"
               v-model="scope.row.is_active"
               @change="toggleStatus(scope.row)"
               active-text="在售"
               inactive-text="停售"
               inline-prompt
             />
+            <el-tag v-else :type="scope.row.is_active ? 'success' : 'info'" size="small">
+              {{ scope.row.is_active ? '在售' : '停售' }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
@@ -70,7 +74,7 @@
             {{ formatDate(scope.row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column v-if="isAdmin" label="操作" width="180" fixed="right">
           <template #default="scope">
             <el-button type="primary" link :icon="Edit" @click="openEditDialog(scope.row)">
               编辑
@@ -106,6 +110,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Plus, Search, RefreshRight, Edit, Delete } from '@element-plus/icons-vue'
 import { formatDate, formatNumber } from '../utils/helpers'
 import ProductDialogs from './products/ProductDialogs.vue'
+
+const props = defineProps({
+  currentUser: {
+    type: Object,
+    default: () => ({ role: 'user' })
+  }
+})
+
+const isAdmin = computed(() => props.currentUser?.role === 'admin')
 
 const products = ref([])
 const loading = ref(false)

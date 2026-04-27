@@ -85,6 +85,7 @@
 
 <script setup>
 import { Search, RefreshRight, Calendar, Setting, Grid } from '@element-plus/icons-vue'
+import { formatLocalDateInput } from '../../utils/helpers'
 
 const props = defineProps({
   searchQuery: String,
@@ -119,14 +120,14 @@ const onSetTimeRange = (range) => {
     if (range === 'month') {
       const start = new Date(year, month, 1)
       emit('update:dateRange', [
-        start.toISOString().split('T')[0],
-        now.toISOString().split('T')[0]
+        formatLocalDateInput(start),
+        formatLocalDateInput(now)
       ])
     } else if (range === 'year') {
       const start = new Date(year, 0, 1)
       emit('update:dateRange', [
-        start.toISOString().split('T')[0],
-        now.toISOString().split('T')[0]
+        formatLocalDateInput(start),
+        formatLocalDateInput(now)
       ])
     }
     onSearch()

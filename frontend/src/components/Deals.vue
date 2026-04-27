@@ -37,6 +37,7 @@
     <DealTable
       :paginated-deals="paginatedDeals"
       :loading="loading"
+      :current-user="currentUser"
       v-model:current-page="currentPage"
       v-model:page-size="pageSize"
       :filtered-total="filteredTotal"
@@ -75,6 +76,7 @@
 import { ref, onMounted } from 'vue'
 import { Money, Plus, Download } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { formatLocalDateInput } from '../utils/helpers'
 
 import { useDeals } from '../composables/useDeals'
 import DealOverview from './deals/DealOverview.vue'
@@ -139,7 +141,14 @@ const dealExportFields = [
   { key: 'updated_at', label: '更新时间', description: '最后更新时间' }
 ]
 
-const defaultExportFields = ['id', 'customer_name', 'product_name', 'quantity', 'unit_price', 'amount', 'deal_status', 'payment_status', 'created_at']
+const invalidDealExportFields = new Set(['customer_name'])
+for (let i = dealExportFields.length - 1; i >= 0; i -= 1) {
+  if (invalidDealExportFields.has(dealExportFields[i].key)) {
+    dealExportFields.splice(i, 1)
+  }
+}
+
+const defaultExportFields = ['id', 'customer_id', 'product_name', 'quantity', 'unit_price', 'amount', 'deal_status', 'payment_status', 'created_at']
 
 const handleSearch = () => {
   currentPage.value = 1
@@ -182,20 +191,20 @@ const handleExportSuccess = () => {
 }
 
 onMounted(() => {
-  fetchDeals()
-  fetchCustomers()
-  fetchProducts()
-  
-  timeRange.value = 'month'
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()
   const start = new Date(year, month, 1)
-  
+
+  timeRange.value = 'month'
   dateRange.value = [
-    start.toISOString().split('T')[0],
-    now.toISOString().split('T')[0]
+    formatLocalDateInput(start),
+    formatLocalDateInput(now)
   ]
+
+  fetchDeals()
+  fetchCustomers()
+  fetchProducts()
 })
 </script>
 

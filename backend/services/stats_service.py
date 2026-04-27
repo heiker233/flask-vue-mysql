@@ -3,13 +3,14 @@ from extensions import db
 from models import Customer, Deal, FollowUp, User
 from datetime import datetime, timedelta
 from sqlalchemy import func
+from date_utils import parse_date_start, parse_date_end_exclusive
 
 def _get_date_range(range_type, start_date_str=None, end_date_str=None):
     now = datetime.utcnow()
     
     if range_type == 'custom':
         if start_date_str and end_date_str:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            start_date = parse_date_start(start_date_str)
             return start_date
         return now - timedelta(days=30)
     elif range_type == 'month':
@@ -20,6 +21,13 @@ def _get_date_range(range_type, start_date_str=None, end_date_str=None):
         return now - timedelta(days=365)
     else:
         return datetime(2000, 1, 1)
+
+
+def _get_date_bounds(range_type, start_date_str=None, end_date_str=None):
+    if range_type == 'custom' and start_date_str and end_date_str:
+        return parse_date_start(start_date_str), parse_date_end_exclusive(end_date_str)
+
+    return _get_date_range(range_type, start_date_str, end_date_str), None
 
 def calculate_growth(current, last):
     if last == 0:
@@ -80,11 +88,13 @@ class StatsService:
     @staticmethod
     def get_kpi_stats(range_type='month', start_date_str=None, end_date_str=None):
         now = datetime.utcnow()
+        end_date = None
+        prev_end_date = None
         
         if range_type == 'custom':
             if start_date_str and end_date_str:
-                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+                start_date = parse_date_start(start_date_str)
+                end_date = parse_date_end_exclusive(end_date_str)
                 days_diff = (end_date - start_date).days
                 prev_end_date = start_date
                 prev_start_date = prev_end_date - timedelta(days=days_diff)
@@ -103,47 +113,54 @@ class StatsService:
         else:  # all
             start_date = datetime(2000, 1, 1)
             prev_start_date = datetime(2000, 1, 1)
-        
-        current_customers = Customer.query.filter(Customer.created_at >= start_date).count()
-        current_deals = Deal.query.filter(Deal.created_at >= start_date).count()
-        current_amount = sum(deal.amount for deal in Deal.query.filter(
-            Deal.created_at >= start_date,
-            Deal.deal_status == 'closed'
-        ).all())
-        current_follow_ups = FollowUp.query.filter(FollowUp.created_at >= start_date).count()
-        
-        prev_customers = Customer.query.filter(
+
+        current_customer_filters = [Customer.created_at >= start_date]
+        current_deal_filters = [Deal.created_at >= start_date]
+        current_follow_up_filters = [FollowUp.created_at >= start_date]
+        if end_date is not None:
+            current_customer_filters.append(Customer.created_at < end_date)
+            current_deal_filters.append(Deal.created_at < end_date)
+            current_follow_up_filters.append(FollowUp.created_at < end_date)
+
+        prev_customer_filters = [
             Customer.created_at >= prev_start_date,
-            Customer.created_at < start_date
-        ).count()
-        prev_deals = Deal.query.filter(
+            Customer.created_at < (prev_end_date or start_date)
+        ]
+        prev_deal_filters = [
             Deal.created_at >= prev_start_date,
-            Deal.created_at < start_date
-        ).count()
-        prev_amount = sum(deal.amount for deal in Deal.query.filter(
-            Deal.created_at >= prev_start_date,
-            Deal.created_at < start_date,
+            Deal.created_at < (prev_end_date or start_date)
+        ]
+        prev_follow_up_filters = [
+            FollowUp.created_at >= prev_start_date,
+            FollowUp.created_at < (prev_end_date or start_date)
+        ]
+
+        current_customers = Customer.query.filter(*current_customer_filters).count()
+        current_deals = Deal.query.filter(*current_deal_filters).count()
+        current_amount = sum(deal.amount for deal in Deal.query.filter(
+            *current_deal_filters,
             Deal.deal_status == 'closed'
         ).all())
-        prev_follow_ups = FollowUp.query.filter(
-            FollowUp.created_at >= prev_start_date,
-            FollowUp.created_at < start_date
-        ).count()
+        current_follow_ups = FollowUp.query.filter(*current_follow_up_filters).count()
         
-        total_deals_current = Deal.query.filter(Deal.created_at >= start_date).count()
+        prev_customers = Customer.query.filter(*prev_customer_filters).count()
+        prev_deals = Deal.query.filter(*prev_deal_filters).count()
+        prev_amount = sum(deal.amount for deal in Deal.query.filter(
+            *prev_deal_filters,
+            Deal.deal_status == 'closed'
+        ).all())
+        prev_follow_ups = FollowUp.query.filter(*prev_follow_up_filters).count()
+        
+        total_deals_current = Deal.query.filter(*current_deal_filters).count()
         closed_deals_current = Deal.query.filter(
-            Deal.created_at >= start_date,
+            *current_deal_filters,
             Deal.deal_status == 'closed'
         ).count()
         conversion_rate = round((closed_deals_current / total_deals_current * 100), 2) if total_deals_current > 0 else 0
         
-        total_deals_prev = Deal.query.filter(
-            Deal.created_at >= prev_start_date,
-            Deal.created_at < start_date
-        ).count()
+        total_deals_prev = Deal.query.filter(*prev_deal_filters).count()
         closed_deals_prev = Deal.query.filter(
-            Deal.created_at >= prev_start_date,
-            Deal.created_at < start_date,
+            *prev_deal_filters,
             Deal.deal_status == 'closed'
         ).count()
         prev_conversion_rate = round((closed_deals_prev / total_deals_prev * 100), 2) if total_deals_prev > 0 else 0
@@ -394,25 +411,31 @@ class StatsService:
 
     @staticmethod
     def get_sales_funnel(range_type='month', start_date_str=None, end_date_str=None):
-        start_date = _get_date_range(range_type, start_date_str, end_date_str)
-        
-        total_customers = Customer.query.filter(Customer.created_at >= start_date).count()
+        start_date, end_date = _get_date_bounds(range_type, start_date_str, end_date_str)
+
+        customer_filters = [Customer.created_at >= start_date]
+        deal_filters = [Deal.created_at >= start_date]
+        if end_date is not None:
+            customer_filters.append(Customer.created_at < end_date)
+            deal_filters.append(Deal.created_at < end_date)
+
+        total_customers = Customer.query.filter(*customer_filters).count()
         
         potential_customers = Customer.query.filter(
-            Customer.created_at >= start_date,
+            *customer_filters,
             Customer.status == 'potential'
         ).count()
         
         customers_with_followup = db.session.query(Customer.id).join(
             FollowUp, Customer.id == FollowUp.customer_id
         ).filter(
-            Customer.created_at >= start_date
+            *customer_filters
         ).distinct().count()
         
         customers_with_deals = db.session.query(Customer.id).join(
             Deal, Customer.id == Deal.customer_id
         ).filter(
-            Deal.created_at >= start_date,
+            *deal_filters,
             Deal.deal_status == 'closed'
         ).distinct().count()
         
@@ -448,9 +471,15 @@ class StatsService:
 
     @staticmethod
     def get_customer_value_analysis(range_type='month', start_date_str=None, end_date_str=None):
-        start_date = _get_date_range(range_type, start_date_str, end_date_str)
-        
-        customers = Customer.query.filter(Customer.created_at >= start_date).all()
+        start_date, end_date = _get_date_bounds(range_type, start_date_str, end_date_str)
+
+        customer_filters = [Customer.created_at >= start_date]
+        deal_filters = [Deal.created_at >= start_date]
+        if end_date is not None:
+            customer_filters.append(Customer.created_at < end_date)
+            deal_filters.append(Deal.created_at < end_date)
+
+        customers = Customer.query.filter(*customer_filters).all()
         
         customer_deal_stats = {}
         deal_stats = db.session.query(
@@ -458,7 +487,7 @@ class StatsService:
             func.sum(Deal.amount).label('total_amount'),
             func.count(Deal.id).label('deal_count')
         ).filter(
-            Deal.created_at >= start_date
+            *deal_filters
         ).group_by(Deal.customer_id).all()
         
         for customer_id, total_amount, deal_count in deal_stats:
@@ -549,7 +578,11 @@ class StatsService:
 
     @staticmethod
     def get_sales_performance(range_type='month', start_date_str=None, end_date_str=None):
-        start_date = _get_date_range(range_type, start_date_str, end_date_str)
+        start_date, end_date = _get_date_bounds(range_type, start_date_str, end_date_str)
+
+        deal_filters = [Deal.created_at >= start_date]
+        if end_date is not None:
+            deal_filters.append(Deal.created_at < end_date)
         
         user_all_deals = db.session.query(
             User.id,
@@ -559,7 +592,7 @@ class StatsService:
         ).join(
             Deal, User.id == Deal.created_by
         ).filter(
-            Deal.created_at >= start_date
+            *deal_filters
         ).group_by(User.id).all()
         
         user_closed_deals = db.session.query(
@@ -569,7 +602,7 @@ class StatsService:
         ).join(
             Deal, User.id == Deal.created_by
         ).filter(
-            Deal.created_at >= start_date,
+            *deal_filters,
             Deal.deal_status == 'closed'
         ).group_by(User.id).all()
         
@@ -606,7 +639,7 @@ class StatsService:
         ).join(
             Customer, Deal.customer_id == Customer.id
         ).filter(
-            Deal.created_at >= start_date,
+            *deal_filters,
             Customer.industry != None,
             Customer.industry != ''
         ).group_by(Customer.industry).all()

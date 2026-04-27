@@ -64,6 +64,7 @@ import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Message, Plus, Download } from '@element-plus/icons-vue'
 import ExportDialog from './ExportDialog.vue'
+import { formatLocalDateInput } from '../utils/helpers'
 
 import FollowUpFilter from './follow-ups/FollowUpFilter.vue'
 import FollowUpTable from './follow-ups/FollowUpTable.vue'
@@ -137,9 +138,26 @@ const followUpExportFields = [
   { key: 'created_at', label: '创建时间', description: '记录创建时间' }
 ]
 
-const defaultExportFields = ['id', 'customer_name', 'content', 'follow_type', 'next_follow_date', 'is_conversion', 'created_at']
+const invalidFollowUpExportFields = new Set(['customer_name', 'creator_name'])
+for (let i = followUpExportFields.length - 1; i >= 0; i -= 1) {
+  if (invalidFollowUpExportFields.has(followUpExportFields[i].key)) {
+    followUpExportFields.splice(i, 1)
+  }
+}
+
+const defaultExportFields = ['id', 'customer_id', 'content', 'follow_type', 'next_follow_date', 'is_conversion', 'created_at']
 
 onMounted(() => {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+
+  timeRange.value = 'month'
+  dateRange.value = [
+    formatLocalDateInput(start),
+    formatLocalDateInput(end)
+  ]
+
   fetchFollowUps()
   // 默认选择本月由 useFollowUps 中初始化的 data 设置了 timeRange="month"，此时由 Filter组件自己触发可能更好或就在初始化时设置
   // 这里已在 Filter 初始化时如果有设置会处理，不过稳妥起见不重写组件的话就是这样

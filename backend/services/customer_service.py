@@ -5,6 +5,7 @@
 from extensions import db
 from models import Customer, CustomerTag, FollowUp, Deal
 from datetime import datetime
+from date_utils import parse_date_start, parse_date_end_exclusive
 
 class CustomerService:
     
@@ -49,15 +50,15 @@ class CustomerService:
         # 日期范围筛选
         if filters.get('start_date'):
             try:
-                start_dt = datetime.fromisoformat(filters['start_date'])
+                start_dt = parse_date_start(filters['start_date'])
                 query = query.filter(Customer.created_at >= start_dt)
             except ValueError:
                 pass
         
         if filters.get('end_date'):
             try:
-                end_dt = datetime.fromisoformat(filters['end_date'])
-                query = query.filter(Customer.created_at <= end_dt)
+                end_dt = parse_date_end_exclusive(filters['end_date'])
+                query = query.filter(Customer.created_at < end_dt)
             except ValueError:
                 pass
         

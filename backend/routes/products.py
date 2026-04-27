@@ -5,7 +5,7 @@
 
 from flask import Blueprint, request, jsonify
 from services.product_service import ProductService
-from utils import token_required
+from utils import token_required, admin_required
 
 products_bp = Blueprint('products', __name__)
 
@@ -27,25 +27,25 @@ def get_products():
     return jsonify(result)
 
 @products_bp.route('/products', methods=['POST'])
-@token_required
+@admin_required
 def add_product():
-    """添加产品"""
+    """添加产品（仅限管理员）"""
     data = request.json
     # Pass data and user_id separately to match refined Service signature
     result, status = ProductService.add_product(data, request.current_user.id)
     return jsonify(result), status
 
 @products_bp.route('/products/<int:id>', methods=['PUT'])
-@token_required
+@admin_required
 def update_product(id):
-    """更新产品"""
+    """更新产品（仅限管理员）"""
     data = request.json
     result, status = ProductService.update_product(id, data)
     return jsonify(result), status
 
 @products_bp.route('/products/<int:id>', methods=['DELETE'])
-@token_required
+@admin_required
 def delete_product(id):
-    """删除产品"""
+    """删除产品（仅限管理员）"""
     result, status = ProductService.delete_product(id)
     return jsonify(result), status

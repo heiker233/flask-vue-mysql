@@ -2,14 +2,9 @@
 交易管理路由模块
 处理交易的增删改查、审批等功能
 """
-import sys
-import os
-
-# 确保能找到 services 目录
-
 from flask import Blueprint, request, jsonify
 from services.deal_service import DealService
-from utils import token_required
+from utils import token_required, admin_required
 
 deals_bp = Blueprint('deals', __name__)
 
@@ -93,15 +88,17 @@ def delete_deal(id):
         return jsonify({'success': False, 'message': f'删除失败: {str(e)}'}), 500
 
 @deals_bp.route('/deals/<int:id>/approve', methods=['POST'])
-@token_required
+@admin_required
 def approve_deal(id):
-    """审批交易"""
+    """审批交易（仅限管理员）"""
     data = request.json
     action = data.get('action')
     comment = data.get('comment', '')
     
     try:
-        success, message, deal = DealService.approve_deal(id, action, comment)
+        success, message, deal = DealService.approve_deal(
+            id, action, comment, approver_id=request.current_user.id
+        )
         if not success:
             if message == '交易不存在':
                 return jsonify({'success': False, 'message': message}), 404

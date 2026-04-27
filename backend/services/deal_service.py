@@ -3,8 +3,9 @@
 处理交易相关的核心业务逻辑
 """
 from extensions import db
-from models import Deal, Customer, FollowUp
+from models import Deal, Customer, FollowUp, Product
 from datetime import datetime
+from date_utils import parse_date_start, parse_date_end_exclusive
 
 class DealService:
 
@@ -28,13 +29,27 @@ class DealService:
         # 搜索关键词
         keyword = filters.get('keyword', '').strip()
         if keyword:
-            query = query.join(Customer).filter(
+            query = query.join(Customer).outerjoin(Product, Deal.product_id == Product.id).filter(
                 db.or_(
                     Customer.name.ilike(f'%{keyword}%'),
-                    Customer.company.ilike(f'%{keyword}%')
+                    Customer.company.ilike(f'%{keyword}%'),
+                    Deal.product_name.ilike(f'%{keyword}%'),
+                    Product.name.ilike(f'%{keyword}%')
                 )
             )
-        
+
+        if filters.get('start_date'):
+            try:
+                query = query.filter(Deal.created_at >= parse_date_start(filters['start_date']))
+            except ValueError:
+                pass
+
+        if filters.get('end_date'):
+            try:
+                query = query.filter(Deal.created_at < parse_date_end_exclusive(filters['end_date']))
+            except ValueError:
+                pass
+
         query = query.order_by(Deal.created_at.desc())
         
         page = filters.get('page')
@@ -48,13 +63,25 @@ class DealService:
                 
                 # Fetch aggregated stats for the filtered query (not paginated)
                 from sqlalchemy import func
+                filtered_deals = query.subquery()
                 stats_query = db.session.query(
-                    func.sum(Deal.amount),
-                    func.sum(db.case((Deal.deal_status == 'closed', Deal.amount), else_=0)),
-                    func.sum(db.case((Deal.deal_status == 'negotiating', Deal.amount), else_=0)),
-                    func.sum(db.case((Deal.approval_status == 'pending', 1), else_=0)),
-                    func.sum(db.case((Deal.payment_status != 'paid', Deal.amount - func.coalesce(Deal.paid_amount, 0)), else_=0))
-                ).select_from(query.subquery())
+                    func.coalesce(func.sum(filtered_deals.c.amount), 0),
+                    func.coalesce(func.sum(db.case((filtered_deals.c.deal_status == 'closed', filtered_deals.c.amount), else_=0)), 0),
+                    func.coalesce(func.sum(db.case((filtered_deals.c.deal_status == 'negotiating', filtered_deals.c.amount), else_=0)), 0),
+                    func.coalesce(func.sum(db.case((filtered_deals.c.approval_status == 'pending', 1), else_=0)), 0),
+                    func.coalesce(
+                        func.sum(
+                            db.case(
+                                (
+                                    filtered_deals.c.payment_status != 'paid',
+                                    filtered_deals.c.amount - func.coalesce(filtered_deals.c.paid_amount, 0)
+                                ),
+                                else_=0
+                            )
+                        ),
+                        0
+                    )
+                ).select_from(filtered_deals)
                 
                 totals = stats_query.first() or (0, 0, 0, 0, 0)
                 
@@ -111,13 +138,21 @@ class DealService:
                 except:
                     pass
 
+            product_id = data.get('product_id')
+            product = Product.query.get(product_id) if product_id else None
+            if product_id and not product:
+                return False, '产品不存在', None
+            quantity = int(data.get('quantity', 1))
+            unit_price = float(product.price if product else data.get('unit_price', 0))
+            amount = quantity * unit_price
+
             new_deal = Deal(
                 customer_id=data.get('customer_id'),
-                product_id=data.get('product_id'),
-                product_name=data.get('product_name'),
-                quantity=int(data.get('quantity', 1)),
-                unit_price=float(data.get('unit_price', 0)),
-                amount=float(data.get('amount', 0)),
+                product_id=product_id,
+                product_name=product.name if product else data.get('product_name'),
+                quantity=quantity,
+                unit_price=unit_price,
+                amount=amount,
                 deal_status=data.get('deal_status', 'negotiating'),
                 payment_status=data.get('payment_status', 'unpaid'),
                 paid_amount=float(data.get('paid_amount', 0)),
@@ -128,6 +163,14 @@ class DealService:
             )
             db.session.add(new_deal)
             db.session.commit()
+            if new_deal.approval_status == 'pending':
+                from services.message_service import MessageService
+                payload = MessageService._build_pending_deal_message(new_deal)
+                MessageService.notify_admins(
+                    title=payload['title'],
+                    content=payload['content'],
+                    msg_type='deal'
+                )
             return True, '交易添加成功', new_deal
         except Exception as e:
             db.session.rollback()
@@ -144,8 +187,6 @@ class DealService:
             if 'product_id' in data: deal.product_id = data['product_id']
             if 'product_name' in data: deal.product_name = data['product_name']
             if 'quantity' in data: deal.quantity = int(data['quantity'])
-            if 'unit_price' in data: deal.unit_price = float(data['unit_price'])
-            if 'amount' in data: deal.amount = float(data['amount'])
             if 'deal_status' in data: deal.deal_status = data['deal_status']
             if 'payment_status' in data: deal.payment_status = data['payment_status']
             if 'paid_amount' in data: deal.paid_amount = float(data['paid_amount'])
@@ -156,6 +197,19 @@ class DealService:
                     deal.expected_close_date = datetime.strptime(data['expected_close_date'], '%Y-%m-%d').date()
                 else:
                     deal.expected_close_date = None
+
+            product = Product.query.get(deal.product_id) if deal.product_id else None
+            if deal.product_id and not product:
+                return False, '产品不存在', None
+            if product:
+                deal.product_name = product.name
+                deal.unit_price = float(product.price)
+                deal.amount = deal.quantity * deal.unit_price
+            else:
+                if 'unit_price' in data:
+                    deal.unit_price = float(data['unit_price'])
+                if 'amount' in data:
+                    deal.amount = float(data['amount'])
             
             deal.updated_at = datetime.utcnow()
             db.session.commit()
@@ -181,22 +235,38 @@ class DealService:
             return False, str(e)
 
     @staticmethod
-    def approve_deal(id, action, comment=''):
+    def approve_deal(id, action, comment='', approver_id=None):
         deal = Deal.query.get(id)
         if not deal:
             return False, '交易不存在', None
-        
+
+        if deal.approval_status != 'pending':
+            return False, '该交易已被审批，无法重复操作', None
+
         try:
             if action == 'approve':
                 deal.approval_status = 'approved'
                 deal.deal_status = 'closed'
+                deal.actual_close_date = datetime.utcnow().date()
             elif action == 'reject':
                 deal.approval_status = 'rejected'
             else:
                 return False, '无效的审批操作', None
             
+            deal.approved_by = approver_id
+            deal.approved_at = datetime.utcnow()
             deal.updated_at = datetime.utcnow()
             db.session.commit()
+            from services.message_service import MessageService
+            customer_name = deal.customer.name if deal.customer else ''
+            notify_title = '交易审批通过' if action == 'approve' else '交易审批驳回'
+            notify_content = f'客户 {customer_name} 的交易已审批通过' if action == 'approve' else f'客户 {customer_name} 的交易已被驳回'
+            MessageService.notify_user(
+                user_id=deal.created_by,
+                title=notify_title,
+                content=notify_content,
+                msg_type='deal'
+            )
             return True, '审批成功', deal
         except Exception as e:
             db.session.rollback()

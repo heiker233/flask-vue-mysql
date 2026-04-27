@@ -11,6 +11,8 @@ const avatarColors = ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#909399', '#8
  * @param {string} name
  * @returns {string} hex 颜色值
  */
+const padNumber = (value) => String(value).padStart(2, '0')
+
 export const getAvatarColor = (name) => {
   if (!name) return '#409EFF'
   let hash = 0
@@ -48,6 +50,22 @@ export const formatDateOnly = (dateStr) => {
   const date = new Date(dateStr)
   const localDate = new Date(date.getTime() + 8 * 60 * 60 * 1000)
   return localDate.toLocaleDateString('zh-CN')
+}
+
+/**
+ * 鐢熸垚鏈湴鏃ユ湡杈撳叆瀛楃涓诧紙YYYY-MM-DD锛夛紝閬垮厤 UTC 杞崲瀵艰嚧鏃ユ湡鍋忕Щ
+ * @param {Date|string|number} input
+ * @returns {string}
+ */
+export const formatLocalDateInput = (input = new Date()) => {
+  const date = input instanceof Date ? input : new Date(input)
+  if (Number.isNaN(date.getTime())) return ''
+
+  return [
+    date.getFullYear(),
+    padNumber(date.getMonth() + 1),
+    padNumber(date.getDate())
+  ].join('-')
 }
 
 /**

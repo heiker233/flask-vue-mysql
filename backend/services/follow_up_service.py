@@ -5,6 +5,10 @@ from datetime import datetime
 
 class FollowUpService:
     @staticmethod
+    def _get_follow_type(data, default='其他'):
+        return data.get('follow_up_method') or data.get('follow_type') or default
+
+    @staticmethod
     def get_follow_ups(customer_id=None, deal_id=None, keyword='', page=None, page_size=10):
         query = FollowUp.query
         
@@ -32,7 +36,9 @@ class FollowUpService:
                 'customer_company': f.customer.company if f.customer else None,
                 'deal_id': f.deal_id,
                 'content': f.content,
+                'follow_type': f.follow_type,
                 'follow_up_method': f.follow_type,
+                'is_conversion': f.is_conversion,
                 'next_follow_date': f.next_follow_date.isoformat() if f.next_follow_date else None,
                 'created_by': f.created_by,
                 'created_at': f.created_at.isoformat() if f.created_at else None,
@@ -72,7 +78,7 @@ class FollowUpService:
                 customer_id=data['customer_id'],
                 deal_id=data.get('deal_id'),
                 content=data['content'],
-                follow_type=data.get('follow_up_method', 'phone'), # DB column is follow_type
+                follow_type=FollowUpService._get_follow_type(data),
                 next_follow_date=next_follow_date,
                 created_by=current_user_id
             )
@@ -99,10 +105,16 @@ class FollowUpService:
         if not follow_up:
             return {'success': False, 'message': '跟进记录不存在'}, 404
         
+        if 'customer_id' in data:
+            follow_up.customer_id = data['customer_id']
+        if 'deal_id' in data:
+            follow_up.deal_id = data['deal_id'] if data['deal_id'] else None
         if 'content' in data:
             follow_up.content = data['content']
-        if 'follow_up_method' in data:
-            follow_up.follow_type = data['follow_up_method']
+        if 'follow_up_method' in data or 'follow_type' in data:
+            follow_up.follow_type = FollowUpService._get_follow_type(data, follow_up.follow_type)
+        if 'is_conversion' in data:
+            follow_up.is_conversion = data['is_conversion']
         if 'next_follow_date' in data:
             if data['next_follow_date']:
                 try:

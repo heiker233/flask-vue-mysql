@@ -23,8 +23,8 @@
       <el-table-column prop="content" label="跟进内容" min-width="200" show-overflow-tooltip />
       <el-table-column prop="follow_type" label="跟进方式" width="100" align="center">
         <template #default="scope">
-          <el-tag :type="getFollowTypeType(scope.row.follow_type)" effect="light" size="small">
-            {{ scope.row.follow_type || '其他' }}
+          <el-tag :type="getFollowTypeType(scope.row.follow_type || scope.row.follow_up_method)" effect="light" size="small">
+            {{ scope.row.follow_type || scope.row.follow_up_method || '其他' }}
           </el-tag>
         </template>
       </el-table-column>

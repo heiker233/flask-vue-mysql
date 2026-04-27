@@ -31,7 +31,7 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="单价" prop="unit_price">
-              <el-input-number v-model="newDeal.unit_price" :min="0" :precision="2" style="width: 100%" @change="calculateAmount" />
+              <el-input-number v-model="newDeal.unit_price" :min="0" :precision="2" style="width: 100%" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -112,7 +112,7 @@
           </el-col>
           <el-col :span="8">
             <el-form-item label="单价" prop="unit_price">
-              <el-input-number v-model="editDealForm.unit_price" :min="0" :precision="2" style="width: 100%" @change="calculateEditAmount" />
+              <el-input-number v-model="editDealForm.unit_price" :min="0" :precision="2" style="width: 100%" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -214,7 +214,7 @@
           <el-timeline-item v-for="(fu, index) in dealFollowUps" :key="index" :timestamp="formatDate(fu.created_at)" :type="fu.is_conversion ? 'success' : 'primary'" :hollow="!fu.is_conversion">
             <el-card shadow="hover" class="timeline-card">
               <div class="timeline-header">
-                <el-tag size="small">{{ fu.follow_type || '其他' }}</el-tag>
+                <el-tag size="small">{{ fu.follow_type || fu.follow_up_method || '其他' }}</el-tag>
                 <el-tag v-if="fu.is_conversion" size="small" type="success" effect="dark" style="margin-left: 8px;">促成交易</el-tag>
               </div>
               <p class="timeline-content">{{ fu.content }}</p>
@@ -312,8 +312,11 @@ const onProductSelect = (productId) => {
   if (product) {
     newDeal.value.product_name = product.name
     newDeal.value.unit_price = product.price
-    calculateAmount()
+  } else {
+    newDeal.value.product_name = ''
+    newDeal.value.unit_price = 0
   }
+  calculateAmount()
 }
 
 const onEditProductSelect = (productId) => {
@@ -321,8 +324,11 @@ const onEditProductSelect = (productId) => {
   if (product) {
     editDealForm.value.product_name = product.name
     editDealForm.value.unit_price = product.price
-    calculateEditAmount()
+  } else {
+    editDealForm.value.product_name = ''
+    editDealForm.value.unit_price = 0
   }
+  calculateEditAmount()
 }
 
 const calculateAmount = () => {

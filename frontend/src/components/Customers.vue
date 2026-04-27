@@ -162,7 +162,7 @@ import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { User, Plus, View, Edit, Delete, Download } from '@element-plus/icons-vue'
-import { getAvatarColor, formatDate } from '../utils/helpers'
+import { getAvatarColor, formatDate, formatLocalDateInput } from '../utils/helpers'
 
 import ExportDialog from './ExportDialog.vue'
 import CustomerSearch from './customers/CustomerSearch.vue'
@@ -199,6 +199,14 @@ const customerExportFields = [
   { key: 'updated_at', label: '更新时间', description: '最后更新时间' },
   { key: 'notes', label: '备注信息', description: '客户备注' }
 ]
+
+const invalidCustomerExportFields = new Set(['assignee_name', 'notes'])
+for (let i = customerExportFields.length - 1; i >= 0; i -= 1) {
+  if (invalidCustomerExportFields.has(customerExportFields[i].key)) {
+    customerExportFields.splice(i, 1)
+  }
+}
+
 const defaultExportFields = ['name', 'phone', 'email', 'company', 'industry', 'status', 'value_score', 'created_at']
 
 // 搜索和筛选状态
@@ -325,10 +333,10 @@ const setTimeRange = (range) => {
     const month = now.getMonth()
     if (range === 'month') {
       const start = new Date(year, month, 1)
-      dateRange.value = [start.toISOString().split('T')[0], now.toISOString().split('T')[0]]
+      dateRange.value = [formatLocalDateInput(start), formatLocalDateInput(now)]
     } else if (range === 'year') {
       const start = new Date(year, 0, 1)
-      dateRange.value = [start.toISOString().split('T')[0], now.toISOString().split('T')[0]]
+      dateRange.value = [formatLocalDateInput(start), formatLocalDateInput(now)]
     }
     handleSearch()
   }

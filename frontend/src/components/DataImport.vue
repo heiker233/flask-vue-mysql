@@ -37,7 +37,7 @@
               :on-success="(res) => handlePreviewSuccess(res, 'customers')"
               :on-error="handleError"
               :before-upload="beforeUpload"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.csv"
               :show-file-list="false"
             >
               <el-icon class="el-icon--upload"><upload-filled /></el-icon>
@@ -46,7 +46,7 @@
               </div>
               <template #tip>
                 <div class="el-upload__tip">
-                  支持 Excel (.xlsx, .xls) 或 CSV 格式文件
+                  支持 Excel (.xlsx) 或 CSV 格式文件
                 </div>
               </template>
             </el-upload>
@@ -82,7 +82,7 @@
               :on-success="(res) => handlePreviewSuccess(res, 'deals')"
               :on-error="handleError"
               :before-upload="beforeUpload"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.csv"
               :show-file-list="false"
             >
               <el-icon class="el-icon--upload"><upload-filled /></el-icon>
@@ -91,7 +91,7 @@
               </div>
               <template #tip>
                 <div class="el-upload__tip">
-                  支持 Excel (.xlsx, .xls) 或 CSV 格式文件
+                  支持 Excel (.xlsx) 或 CSV 格式文件
                 </div>
               </template>
             </el-upload>
@@ -272,19 +272,19 @@ const customerFields = [
 const dealFields = [
   { field: 'customer_id', required: true, description: '客户ID（系统中已存在的客户）' },
   { field: 'amount', required: true, description: '交易金额（数字）' },
-  { field: 'product', required: false, description: '产品名称' },
+  { field: 'product_name', required: false, description: '产品名称' },
   { field: 'deal_status', required: false, description: '交易状态（negotiating/closed/cancelled）' },
   { field: 'expected_close_date', required: false, description: '预期完成日期（YYYY-MM-DD）' }
 ]
 
 // 上传前检查并拦截
 const beforeUpload = (file) => {
-  const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+  const isExcel = file.name.endsWith('.xlsx')
   const isCSV = file.name.endsWith('.csv')
   const isLt10M = file.size / 1024 / 1024 < 10
 
   if (!isExcel && !isCSV) {
-    ElMessage.error('只支持 Excel 或 CSV 格式文件!')
+    ElMessage.error('只支持 .xlsx 或 .csv 格式文件!')
     return false
   }
   if (!isLt10M) {
@@ -374,12 +374,11 @@ const handleError = (error) => {
 // 下载模板
 const downloadTemplate = async (type) => {
   try {
-    const response = await fetch(`/api/import/template/${type}`)
-    if (!response.ok) {
-      throw new Error('下载模板失败')
-    }
-    
-    const blob = await response.blob()
+    const response = await axios.get(`/api/import/template/${type}`, {
+      responseType: 'blob'
+    })
+
+    const blob = response.data
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url

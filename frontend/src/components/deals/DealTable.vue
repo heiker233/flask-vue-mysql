@@ -66,7 +66,7 @@
             编辑
           </el-button>
           <el-button 
-            v-if="scope.row.approval_status === 'pending'" 
+            v-if="scope.row.approval_status === 'pending' && currentUser?.role === 'admin'"
             type="success" 
             link 
             :icon="Check" 
@@ -105,7 +105,11 @@ const props = defineProps({
   loading: Boolean,
   currentPage: Number,
   pageSize: Number,
-  filteredTotal: Number
+  filteredTotal: Number,
+  currentUser: {
+    type: Object,
+    default: () => ({ role: 'user' })
+  }
 })
 
 const emit = defineEmits(['view', 'edit', 'approve', 'delete', 'update:currentPage', 'update:pageSize'])
